@@ -1,0 +1,29 @@
+name: Hub Auto-Update
+
+on:
+  schedule:
+    - cron: '0 0 * * *' 
+  workflow_dispatch:
+
+jobs:
+  update-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Hub Update
+        env:
+          GITHUB_TOKEN: ${{ secrets.HUB_GITHUB_TOKEN }}
+          ORG_NAME: ${{ secrets.HUB_ORG_NAME }}
+        run: |
+          python main.py --org $ORG_NAME --token $GITHUB_TOKEN --dockerize
+      - name: Archive Hub Result
+        uses: actions/upload-artifact@v3
+        with:
+          name: github-hub-snapshot
+          path: github_hub/
