@@ -1,0 +1,139 @@
+name: Hub Auto-Update + Pipeline Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─── ORIGINAL HUB UPDATE ────────────────────────────────────
+  update-hub:
+    name: Update Hub
+    runs-on: ubuntu-latest
+    outputs:
+      hub-updated: ${{ steps.update.outputs.updated }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Hub Update
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.HUB_GITHUB_TOKEN }}
+          ORG_NAME: ${{ secrets.HUB_ORG_NAME }}
+        run: |
+          python main.py --org $ORG_NAME --token $GITHUB_TOKEN --dockerize
+          echo "updated=true" >> $GITHUB_OUTPUT
+
+      - name: Archive Hub Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-hub-snapshot
+          path: github_hub/
+
+  # ─── BUILD RUST PIPELINE ────────────────────────────────────
+  build-pipeline:
+    name: Build Rust Pipeline
+    runs-on: ubuntu-latest
+    needs: update-hub
+    if: needs.update-hub.outputs.hub-updated == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-binary
+          path: target/release/ticket-pipeline
+
+  # ─── RUN PIPELINE SYNC ──────────────────────────────────────
+  sync-tickets:
+    name: Sync Tickets to HelpCenter
+    runs-on: ubuntu-latest
+    needs: build-pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-binary
+          path: ./bin/
+
+      - name: Make binary executable
+        run: chmod +x ./bin/ticket-pipeline
+
+      - name: Validate configuration
+        env:
+          CLIENT_DASHBOARD_URL: ${{ secrets.CLIENT_DASHBOARD_URL }}
+          CLIENT_DASHBOARD_API_KEY: ${{ secrets.CLIENT_DASHBOARD_API_KEY }}
+          HELPCENTER_URL: ${{ secrets.HELPCENTER_URL }}
+          HELPCENTER_API_KEY: ${{ secrets.HELPCENTER_API_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: ./bin/ticket-pipeline validate
+
+      - name: Health check
+        env:
+          CLIENT_DASHBOARD_URL: ${{ secrets.CLIENT_DASHBOARD_URL }}
+          CLIENT_DASHBOARD_API_KEY: ${{ secrets.CLIENT_DASHBOARD_API_KEY }}
+          HELPCENTER_URL: ${{ secrets.HELPCENTER_URL }}
+          HELPCENTER_API_KEY: ${{ secrets.HELPCENTER_API_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+        run: ./bin/ticket-pipeline health || true
+
+      - name: Run ticket pipeline
+        env:
+          CLIENT_DASHBOARD_URL: ${{ secrets.CLIENT_DASHBOARD_URL }}
+          CLIENT_DASHBOARD_API_KEY: ${{ secrets.CLIENT_DASHBOARD_API_KEY }}
+          HELPCENTER_URL: ${{ secrets.HELPCENTER_URL }}
+          HELPCENTER_API_KEY: ${{ secrets.HELPCENTER_API_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          PIPELINE_LOG_LEVEL: info
+          AUDIT_LOG_ENABLED: "true"
+          CHECKSUM_ENABLED: "true"
+        run: ./bin/ticket-pipeline
+
+      - name: Upload metrics
+        if: always()
+        run: ./bin/ticket-pipeline metrics > metrics.txt || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-results
+          path: |
+            metrics.txt
+          retention-days: 7
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Ticket Pipeline sync failed after Hub update!"
