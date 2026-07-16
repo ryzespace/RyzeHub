@@ -3,72 +3,11 @@
   <component name="AutoImportSettings">
     <option name="autoReloadType" value="ALL" />
   </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="beb81f9f-ba89-4eb4-8215-003b22b1bbd1" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/ci-pipeline.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/dependency-analysis.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/deploy-pipeline.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/docker-build.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/error-detection.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/hub-auto-update.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/hub-manager.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/security-encryption.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/discord.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/PROJECT_SUMMARY.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/QUICK_START.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/SECURITY_DOCS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/config.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/crypto/engine.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/crypto/keys.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/crypto/mod.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/crypto/signatures.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/crypto/vault.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/dependency_manager.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/destination_client.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/docker_manager.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/error_detection/anomaly.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/error_detection/mod.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/errors.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/github_manager.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/hub_manager.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/metrics.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/models.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/pipeline.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/security.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/source_client.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/transformer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitattributes" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.github/workflows/ci.yml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.github/workflows/hub-update.yml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.github/workflows/modules-manager.yml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/github_hub.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Ci_conf/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Ci_conf/dependency_manager.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Ci_conf/docker_manager.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Ci_conf/github_manager.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/config/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/destination/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/destination/destination_client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/destination/destination_helpcenter.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/pipeline/pipeline.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/source/source_client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/tests/test.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/tickets/models.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/help_desk_pipeline/transformer.py" beforeDir="false" />
-    </list>
+    <list default="true" id="beb81f9f-ba89-4eb4-8215-003b22b1bbd1" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -113,6 +52,7 @@
     "git-widget-placeholder": "main",
     "last_opened_file_path": "C:/Users/anysz/Documents/GitHub/RyzeHub",
     "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
     "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
     "settings.editor.selected.configurable": "discord-project",
     "vue.rearranger.settings.migration": "true"
@@ -141,7 +81,7 @@
       <updated>1783537946283</updated>
       <workItem from="1783537947385" duration="3728000" />
       <workItem from="1784129478238" duration="5765000" />
-      <workItem from="1784215786050" duration="1642000" />
+      <workItem from="1784215786050" duration="1823000" />
     </task>
     <servers />
   </component>
