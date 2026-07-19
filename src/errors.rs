@@ -1,5 +1,3 @@
-//! Error types / Typy błędów
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]

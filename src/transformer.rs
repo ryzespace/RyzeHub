@@ -1,6 +1,3 @@
-//! Transformer module / Moduł transformacji
-//! Validation, enrichment, filtering, deduplication
-
 use std::collections::HashSet;
 
 use lazy_static::lazy_static;
@@ -11,41 +8,34 @@ use crate::models::{Ticket, TicketPriority, TicketStatus, TicketType, TransferRe
 use crate::security::{AuditLogger, ChecksumGenerator};
 
 lazy_static! {
-    /// Keywords for auto-categorization / Słowa kluczowe do auto-kategoryzacji
     static ref CATEGORY_KEYWORDS: Vec<(&'static str, Vec<&'static str>)> = vec![
-        ("billing", vec!["faktura", "płatność", "invoice", "payment", "billing", "rachunek", "cena"]),
-        ("technical", vec!["błąd", "error", "crash", "awaria", "nie działa", "bug", "timeout", "500", "404"]),
-        ("account", vec!["konto", "account", "logowanie", "login", "hasło", "password", "rejestracja"]),
-        ("feature", vec!["proponuję", "sugestia", "feature", "request", "nowa funkcja", "dodaj"]),
-        ("integration", vec!["api", "integracja", "webhook", "integration", "sdk", "połączenie"]),
-        ("performance", vec!["wolno", "wydajność", "performance", "slow", "lag", "timeout"]),
+        ("billing", vec!["faktura", "platnosc", "invoice", "payment", "billing", "rachunek", "cena"]),
+        ("technical", vec!["blad", "error", "crash", "awaria", "nie dziala", "bug", "timeout", "500", "404"]),
+        ("account", vec!["konto", "account", "logowanie", "login", "haslo", "password", "rejestracja"]),
+        ("feature", vec!["proponuje", "sugestia", "feature", "request", "nowa funkcja", "dodaj"]),
+        ("integration", vec!["api", "integracja", "webhook", "integration", "sdk", "polaczenie"]),
+        ("performance", vec!["wolno", "wydajnosc", "performance", "slow", "lag", "timeout"]),
     ];
 
-    /// Keywords for prioritization / Słowa kluczowe do priorytetyzacji
     static ref PRIORITY_KEYWORDS: Vec<(TicketPriority, Vec<&'static str>)> = vec![
         (TicketPriority::Critical, vec![
-            "krytyczny", "critical", "produkcja", "production", "awaria",
-            "outage", "down", "nie działa", "emergency", "natychmiast"
+            "critical", "production", "outage", "down", "emergency"
         ]),
         (TicketPriority::High, vec![
-            "ważne", "important", "pilne", "urgent", "szybko",
-            "asap", "blokujące", "blocking"
+            "important", "urgent", "asap", "blocking"
         ]),
         (TicketPriority::Low, vec![
-            "kiedyś", "someday", "niska", "low priority",
-            "nie pilne", "not urgent", "pytanie", "question"
+            "someday", "low priority", "not urgent", "question"
         ]),
     ];
 
-    /// Regex for sensitive data detection / Regex do wykrywania wrażliwych danych
     static ref SENSITIVE_PATTERNS: Vec<Regex> = vec![
-        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").unwrap(), // Credit card
-        Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap(), // Email
-        Regex::new(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b").unwrap(), // Phone
+        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").unwrap(),
+        Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap(),
+        Regex::new(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b").unwrap(),
     ];
 }
 
-/// Auto-categorize ticket based on content / Auto-kategoryzuj ticket
 pub fn auto_categorize(ticket: &Ticket) -> String {
     let text = build_search_text(ticket);
     let text_lower = text.to_lowercase();
@@ -65,7 +55,6 @@ pub fn auto_categorize(ticket: &Ticket) -> String {
     best_category
 }
 
-/// Auto-prioritize ticket based on content / Auto-priorytetyzuj ticket
 pub fn auto_prioritize(ticket: &Ticket) -> TicketPriority {
     let text = build_search_text(ticket);
     let text_lower = text.to_lowercase();
@@ -85,7 +74,6 @@ pub fn auto_prioritize(ticket: &Ticket) -> TicketPriority {
     best_priority
 }
 
-/// Generate tags for ticket / Generuj tagi dla ticketu
 pub fn generate_tags(ticket: &Ticket) -> Vec<String> {
     let mut tags: HashSet<String> = HashSet::new();
     tags.insert(ticket.ticket_type.to_string());
@@ -102,7 +90,6 @@ pub fn generate_tags(ticket: &Ticket) -> Vec<String> {
         tags.insert("multi_message".to_string());
     }
 
-    // Detect sensitive data / Wykryj wrażliwe dane
     let text = build_search_text(ticket);
     for pattern in SENSITIVE_PATTERNS.iter() {
         if pattern.is_match(&text) {
@@ -114,7 +101,6 @@ pub fn generate_tags(ticket: &Ticket) -> Vec<String> {
     tags.into_iter().collect()
 }
 
-/// Enrich ticket with additional data / Wzbogać ticket
 pub fn enrich_ticket(
     ticket: &mut Ticket,
     auto_categorize_flag: bool,
@@ -137,7 +123,6 @@ pub fn enrich_ticket(
     }
 }
 
-/// Filter tickets / Filtruj tickety
 pub fn filter_tickets(
     tickets: Vec<Ticket>,
     filter_resolved: bool,
@@ -172,7 +157,6 @@ pub fn filter_tickets(
     (filtered, excluded_count)
 }
 
-/// Process a batch of tickets / Przetwarz batch ticketów
 pub fn process_batch(
     tickets: Vec<Ticket>,
     auto_categorize_flag: bool,
@@ -183,23 +167,16 @@ pub fn process_batch(
     checksum_enabled: bool,
     audit: &AuditLogger,
 ) -> (Vec<Ticket>, Vec<TransferResult>) {
-    // 1. Filter / Filtruj
     let (filtered, _) = filter_tickets(tickets, filter_resolved, filter_closed, exclude_ids);
 
-    // 2. Validate and enrich / Waliduj i wzbogać
     let mut valid_tickets = Vec::new();
     let mut failed_results = Vec::new();
 
     for mut ticket in filtered {
-        // Validate / Waliduj
         match ticket.validate() {
             Ok(()) => {
-                // Normalize / Normalizuj
                 ticket.normalize();
-
-                // Enrich / Wzbogać
                 enrich_ticket(&mut ticket, auto_categorize_flag, auto_priority_flag, checksum_enabled);
-
                 valid_tickets.push(ticket);
             }
             Err(errors) => {
@@ -241,11 +218,11 @@ mod tests {
     use crate::models::{ConversationMessage, MessageRole};
 
     fn make_test_ticket() -> Ticket {
-        let mut ticket = Ticket::new("T-001", TicketType::Bug, "Aplikacja się crashuje");
+        let mut ticket = Ticket::new("T-001", TicketType::Bug, "Application crash");
         ticket.conversation.push(ConversationMessage::new(
-            "Jan Kowalski",
+            "John Smith",
             MessageRole::Client,
-            "Nie mogę się zalogować, critical error",
+            "Cannot log in, critical error",
         ));
         ticket
     }
@@ -259,11 +236,11 @@ mod tests {
 
     #[test]
     fn test_auto_categorize_billing() {
-        let mut ticket = Ticket::new("T-002", TicketType::Question, "Problem z fakturą");
+        let mut ticket = Ticket::new("T-002", TicketType::Question, "Problem with invoice");
         ticket.conversation.push(ConversationMessage::new(
-            "Klient",
+            "Client",
             MessageRole::Client,
-            "Płatność nie przeszła, invoice nie opłacona",
+            "Payment failed, invoice not paid",
         ));
         let category = auto_categorize(&ticket);
         assert_eq!(category, "billing");
@@ -271,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_auto_prioritize_critical() {
-        let ticket = Ticket::new("T-003", TicketType::Bug, "Krytyczny błąd na produkcji");
+        let ticket = Ticket::new("T-003", TicketType::Bug, "Critical error in production");
         let priority = auto_prioritize(&ticket);
         assert_eq!(priority, TicketPriority::Critical);
     }
@@ -281,7 +258,7 @@ mod tests {
         let ticket = make_test_ticket();
         assert!(ticket.validate().is_ok());
 
-        let mut invalid = Ticket::new("", TicketType::Other, "");
+        let invalid = Ticket::new("", TicketType::Other, "");
         let errors = invalid.validate().unwrap_err();
         assert!(!errors.is_empty());
     }

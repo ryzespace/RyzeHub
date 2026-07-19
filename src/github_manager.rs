@@ -1,5 +1,5 @@
-//! GitHub Manager / Manager GitHub
-//! Manages GitHub organization repositories and submodules / Zarządza repozytoriami organizacji i submodułami
+//! GitHub Manager
+//! Manages GitHub organization repositories and submodules
 
 use anyhow::Result;
 use reqwest::Client;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
-/// GitHub repository info / Informacje o repozytorium GitHub
+/// GitHub repository info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubRepo {
     pub name: String,
@@ -21,7 +21,7 @@ pub struct GitHubRepo {
     pub language: Option<String>,
 }
 
-/// GitHub Manager configuration / Konfiguracja GitHub Managera
+/// GitHub Manager configuration
 #[derive(Debug, Clone)]
 pub struct GitHubManagerConfig {
     pub org_name: String,
@@ -53,7 +53,7 @@ impl GitHubManager {
         Ok(Self { client, config })
     }
 
-    /// Get all repositories from organization / Pobierz wszystkie repozytoria z organizacji
+    /// Get all repositories from organization
     pub async fn get_repositories(&self) -> Result<Vec<GitHubRepo>> {
         let mut repos = Vec::new();
         let mut page = 1;
@@ -95,7 +95,7 @@ impl GitHubManager {
         Ok(repos)
     }
 
-    /// Clone repository / Klonuj repozytorium
+    /// Clone repository
     pub fn clone_repository(&self, repo: &GitHubRepo, target_dir: &Path) -> Result<PathBuf> {
         let repo_path = target_dir.join(&repo.name);
 
@@ -123,7 +123,7 @@ impl GitHubManager {
         Ok(repo_path)
     }
 
-    /// Add submodule to repository / Dodaj submoduł do repozytorium
+    /// Add submodule to repository
     pub fn add_submodule(
         &self,
         parent_repo_path: &Path,
@@ -138,7 +138,7 @@ impl GitHubManager {
 
         let submodule_path = parent_repo_path.join("libs").join(submodule_name);
 
-        // Create libs directory if needed / Utwórz katalog libs jeśli potrzeba
+        // Create libs directory if needed
         let libs_dir = parent_repo_path.join("libs");
         if !libs_dir.exists() {
             if let Err(e) = std::fs::create_dir_all(&libs_dir) {
@@ -174,7 +174,7 @@ impl GitHubManager {
         }
     }
 
-    /// Initialize and update submodules / Inicjalizuj i aktualizuj submoduły
+    /// Initialize and update submodules
     pub fn init_submodules(&self, repo_path: &Path) -> bool {
         info!("Initializing submodules in {}", repo_path.display());
 
@@ -200,7 +200,7 @@ impl GitHubManager {
         }
     }
 
-    /// Pull latest changes / Pobierz najnowsze zmiany
+    /// Pull latest changes
     pub fn pull_latest(&self, repo_path: &Path) -> bool {
         let output = Command::new("git")
             .args(["pull", "--rebase"])
@@ -224,12 +224,12 @@ impl GitHubManager {
         }
     }
 
-    /// Clone all repositories / Klonuj wszystkie repozytoria
+    /// Clone all repositories
     pub async fn clone_all_repositories(&self, target_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
         let repos = self.get_repositories().await?;
         let mut cloned = Vec::new();
 
-        // Create target directory / Utwórz katalog docelowy
+        // Create target directory
         if !target_dir.exists() {
             std::fs::create_dir_all(target_dir)?;
         }
@@ -254,12 +254,12 @@ impl GitHubManager {
         Ok(cloned)
     }
 
-    /// Get organization name / Pobierz nazwę organizacji
+    /// Get organization name
     pub fn org_name(&self) -> &str {
         &self.config.org_name
     }
 
-    /// Get all repository names / Pobierz wszystkie nazwy repozytoriów
+    /// Get all repository names
     pub async fn get_repo_names(&self) -> Result<Vec<String>> {
         let repos = self.get_repositories().await?;
         Ok(repos.into_iter().map(|r| r.name).collect())

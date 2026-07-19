@@ -1,4 +1,4 @@
-//! Source client - Client Dashboard API / Klient API dashboardu klienta
+//! Source client - Client Dashboard API
 
 use anyhow::Result;
 use reqwest::Client;
@@ -33,7 +33,7 @@ impl ClientDashboardClient {
         })
     }
 
-    /// Fetch tickets from client dashboard / Pobierz tickety z dashboardu klienta
+    /// Fetch tickets from client dashboard
     pub async fn fetch_tickets(
         &self,
         status_filter: Option<Vec<TicketStatus>>,
@@ -81,7 +81,7 @@ impl ClientDashboardClient {
         Ok(tickets)
     }
 
-    /// Fetch single ticket / Pobierz pojedynczy ticket
+    /// Fetch single ticket
     pub async fn fetch_ticket_by_id(&self, ticket_id: &str) -> Result<Ticket> {
         self.rate_limiter.wait().await;
 
@@ -107,7 +107,7 @@ impl ClientDashboardClient {
         Ok(ticket)
     }
 
-    /// Mark ticket as transferred / Oznacz ticket jako przeniesiony
+    /// Mark ticket as transferred
     pub async fn mark_as_transferred(
         &self,
         ticket_id: &str,
@@ -148,7 +148,7 @@ impl ClientDashboardClient {
         }
     }
 
-    /// Get total ticket count / Pobierz całkowitą liczbę ticketów
+    /// Get total ticket count
     pub async fn get_total_count(&self, status_filter: Option<Vec<TicketStatus>>) -> Result<usize> {
         self.rate_limiter.wait().await;
 
@@ -169,7 +169,7 @@ impl ClientDashboardClient {
         Ok(data.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as usize)
     }
 
-    /// Health check / Sprawdzenie zdrowia
+    /// Health check
     pub async fn health_check(&self) -> Result<(bool, Duration)> {
         let start = std::time::Instant::now();
         let url = format!("{}/health", self.config.base_url);
@@ -190,7 +190,7 @@ impl ClientDashboardClient {
         }
     }
 
-    /// Fetch all pages with pagination / Pobierz wszystkie strony
+    /// Fetch all pages with pagination
     pub async fn fetch_all_pages(
         &self,
         status_filter: Option<Vec<TicketStatus>>,
@@ -208,7 +208,7 @@ impl ClientDashboardClient {
             all_tickets.extend(batch.clone());
 
             if batch.len() < self.config.batch_size {
-                break; // Last page / Ostatnia strona
+                break; // Last page
             }
             page += 1;
         }

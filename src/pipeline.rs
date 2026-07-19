@@ -1,5 +1,3 @@
-//! Main pipeline orchestrator / Główny orkiestrator pipeline'a
-
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -23,7 +21,6 @@ pub struct TicketPipeline {
 }
 
 impl TicketPipeline {
-    /// Create new pipeline / Utwórz nowy pipeline
     pub async fn new(config: PipelineConfig) -> Result<Self> {
         let source = ClientDashboardClient::new(config.source.clone())?;
         let destination = HelpCenterClient::new(config.destination.clone())?;
@@ -44,17 +41,15 @@ impl TicketPipeline {
         })
     }
 
-    /// Run pipeline once / Uruchom pipeline raz
     pub async fn run_once(&self) -> Result<PipelineMetrics> {
         let mut metrics = PipelineMetrics::new();
         metrics::inc_pipeline_runs();
         let start = Instant::now();
 
         info!("═══════════════════════════════════════════════");
-        info!("Pipeline run started / Rozpoczęto przetwarzanie");
+        info!("Pipeline run started");
         info!("═══════════════════════════════════════════════");
 
-        // ── STEP 1: Fetch tickets / KROK 1: Pobierz tickety ──
         info!("Step 1: Fetching tickets from client dashboard...");
         let statuses_to_fetch = self.get_statuses_to_fetch();
         let tickets = self
@@ -65,12 +60,11 @@ impl TicketPipeline {
         metrics::inc_fetched(tickets.len());
 
         if tickets.is_empty() {
-            info!("No tickets to process. Brak ticketów do przetworzenia.");
+            info!("No tickets to process.");
             metrics.finish();
             return Ok(metrics);
         }
 
-        // ── STEP 2: Decrypt if needed / KROK 2: Deszyfruj jeśli trzeba ──
         let mut tickets = tickets;
         if let Some(ref enc) = self.encryption {
             info!("Step 2: Decrypting ticket data...");
@@ -81,14 +75,13 @@ impl TicketPipeline {
             }
         }
 
-        // ── STEP 3: Deduplication / KROK 3: Deduplikacja ──
         let mut already_transferred: HashSet<String> = HashSet::new();
         if self.config.deduplicate {
             info!("Step 3: Checking for duplicates...");
             for ticket in &tickets {
                 if let Some(existing_id) = self.destination.check_ticket_exists(&ticket.ticket_id).await {
                     already_transferred.insert(ticket.ticket_id.clone());
-                    info!("Duplicate found: {} → {}", ticket.ticket_id, existing_id);
+                    info!("Duplicate found: {} -> {}", ticket.ticket_id, existing_id);
                 }
             }
             info!(
@@ -97,7 +90,6 @@ impl TicketPipeline {
             );
         }
 
-        // ── STEP 4: Transform / KROK 4: Transformacja ──
         info!("Step 4: Transforming tickets (validate + enrich)...");
         let (valid_tickets, failed_results) = transformer::process_batch(
             tickets,
@@ -119,7 +111,6 @@ impl TicketPipeline {
             return Ok(metrics);
         }
 
-        // ── STEP 5: Encrypt sensitive data / KROK 5: Szyfruj wrażliwe dane ──
         let mut tickets_to_send = valid_tickets;
         if let Some(ref enc) = self.encryption {
             info!("Step 5: Encrypting sensitive data before transfer...");
@@ -130,7 +121,6 @@ impl TicketPipeline {
             }
         }
 
-        // ── STEP 6: Transfer / KROK 6: Transfer ──
         info!(
             "Step 6: Transferring {} tickets to helpcenter...",
             tickets_to_send.len()
@@ -149,7 +139,6 @@ impl TicketPipeline {
                     "client_dashboard",
                     result.helpcenter_ticket_id.as_deref().unwrap_or("unknown"),
                 );
-                // Mark as transferred in source / Oznacz jako przeniesiony w źródle
                 let _ = self
                     .source
                     .mark_as_transferred(
@@ -168,7 +157,7 @@ impl TicketPipeline {
 
         metrics.finish();
         info!("═══════════════════════════════════════════════");
-        info!("Pipeline finished. Summary / Podsumowanie:");
+        info!("Pipeline finished. Summary:");
         info!(
             "  Fetched: {}, Transferred: {}, Failed: {}, Duration: {:.2}s",
             metrics.fetched_count,
@@ -181,7 +170,6 @@ impl TicketPipeline {
         Ok(metrics)
     }
 
-    /// Run pipeline continuously / Uruchom pipeline w trybie ciągłym
     pub async fn run_continuous(&self) -> Result<()> {
         info!(
             "Starting continuous pipeline (poll every {}s)",
@@ -201,7 +189,6 @@ impl TicketPipeline {
         }
     }
 
-    /// Transfer tickets to helpcenter with retry / Transferuj tickety z retry
     async fn transfer_tickets(&self, tickets: &[Ticket]) -> Vec<TransferResult> {
         let mut results = Vec::new();
         let now = chrono::Utc::now();
@@ -211,7 +198,6 @@ impl TicketPipeline {
             let mut success = false;
             let mut helpcenter_id = None;
 
-            // Retry with exponential backoff / Retry z exponential backoff
             for attempt in 0..self.config.destination.max_retries {
                 match self.destination.create_ticket(ticket).await {
                     Ok(id) => {
@@ -229,7 +215,6 @@ impl TicketPipeline {
                             last_error
                         );
 
-                        // Exponential backoff
                         let delay = self.config.destination.retry_delay * 2u64.pow(attempt);
                         tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
                     }
@@ -249,18 +234,14 @@ impl TicketPipeline {
         results
     }
 
-    /// Get statuses to fetch / Pobierz statusy do pobrania
     fn get_statuses_to_fetch(&self) -> Vec<TicketStatus> {
-        let all_statuses = vec![
+        vec![
             TicketStatus::New,
             TicketStatus::InProgress,
             TicketStatus::Waiting,
-        ];
-        // Note: Transferred, Resolved, Closed are excluded by default
-        all_statuses
+        ]
     }
 
-    /// Health check / Sprawdzenie zdrowia
     pub async fn health_check(&self) -> Result<HealthStatus> {
         let (source_healthy, source_latency) = self.source.health_check().await.unwrap_or((false, Default::default()));
         let (dest_healthy, dest_latency) = self.destination.health_check().await.unwrap_or((false, Default::default()));
@@ -291,7 +272,7 @@ impl TicketPipeline {
             pipeline: PipelineHealth {
                 status: overall_status.to_string(),
                 uptime_seconds: PipelineMetrics::get_uptime(),
-                tickets_processed: 0, // Would need a persistent counter
+                tickets_processed: 0,
                 error_rate: 0.0,
             },
         })

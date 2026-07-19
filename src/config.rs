@@ -1,5 +1,3 @@
-//! Configuration / Konfiguracja
-
 use anyhow::Result;
 use serde::Deserialize;
 use std::env;
@@ -103,11 +101,9 @@ impl Default for SecurityConfig {
 }
 
 impl PipelineConfig {
-    /// Load from environment variables / Załaduj ze zmiennych środowiskowych
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
 
-        // Source config / Konfiguracja źródła
         if let Ok(url) = env::var("CLIENT_DASHBOARD_URL") {
             config.source.base_url = url;
         }
@@ -127,7 +123,6 @@ impl PipelineConfig {
             config.source.rate_limit = rate.parse().unwrap_or(100);
         }
 
-        // Destination config / Konfiguracja celu
         if let Ok(url) = env::var("HELPCENTER_URL") {
             config.destination.base_url = url;
         }
@@ -144,7 +139,6 @@ impl PipelineConfig {
             config.destination.rate_limit = rate.parse().unwrap_or(100);
         }
 
-        // Security config / Konfiguracja bezpieczeństwa
         if let Ok(key) = env::var("ENCRYPTION_KEY") {
             config.security.encryption_key = key;
         }
@@ -155,7 +149,6 @@ impl PipelineConfig {
             config.security.checksum_enabled = checksum.parse().unwrap_or(true);
         }
 
-        // Pipeline config / Konfiguracja pipeline'a
         if let Ok(level) = env::var("PIPELINE_LOG_LEVEL") {
             config.log_level = level;
         }
@@ -166,7 +159,6 @@ impl PipelineConfig {
         Ok(config)
     }
 
-    /// Validate configuration / Waliduj konfigurację
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
@@ -189,8 +181,7 @@ impl PipelineConfig {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.into_iter().next().unwrap())
-                .map_err(|e| anyhow::anyhow!("Configuration errors: {:?}", vec![e]))
+            Err(errors)
         }
     }
 }

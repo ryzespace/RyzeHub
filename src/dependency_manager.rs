@@ -1,5 +1,5 @@
-//! Dependency Manager / Manager zależności
-//! Scans repositories for internal dependencies / Skanuje repozytoria pod kątem wewnętrznych zależności
+//! Dependency Manager
+//! Scans repositories for internal dependencies
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ impl DependencyManager {
         Self { org_repos_names }
     }
 
-    /// Find internal dependencies in a repository / Znajdź wewnętrzne zależności w repozytorium
+    /// Find internal dependencies in a repository
     pub fn find_internal_dependencies(&self, repo_path: &Path) -> Vec<String> {
         let mut dependencies = HashSet::new();
 
@@ -35,7 +35,6 @@ impl DependencyManager {
                     Ok(content) => {
                         for repo_name in &self.org_repos_names {
                             // Check if repo name appears in dependency file
-                            // Sprawdź czy nazwa repo pojawia się w pliku zależności
                             if self.contains_dependency(&content, repo_name) {
                                 dependencies.insert(repo_name.clone());
                                 debug!(
@@ -65,7 +64,7 @@ impl DependencyManager {
         deps
     }
 
-    /// Check if content contains dependency reference / Sprawdź czy content zawiera referencję do zależności
+    /// Check if content contains dependency reference
     fn contains_dependency(&self, content: &str, repo_name: &str) -> bool {
         // For Rust/Cargo - check for git dependencies
         if content.contains("git = ") && content.contains(repo_name) {
@@ -109,7 +108,7 @@ impl DependencyManager {
         false
     }
 
-    /// Scan all repositories and build dependency graph / Skanuj wszystkie repozytoria i zbuduj graf zależności
+    /// Scan all repositories and build dependency graph
     pub fn build_dependency_graph(&self, repos: &[(String, PathBuf)]) -> DependencyGraph {
         let mut graph = DependencyGraph::new();
 
@@ -128,7 +127,7 @@ impl DependencyManager {
     }
 }
 
-/// Dependency graph / Graf zależności
+/// Dependency graph
 #[derive(Debug, Clone)]
 pub struct DependencyGraph {
     pub repositories: HashSet<String>,
@@ -154,22 +153,22 @@ impl DependencyGraph {
         }
     }
 
-    /// Get topological order for build / Pobierz kolejność topologiczną do buildu
+    /// Get topological order for build
     pub fn topological_sort(&self) -> Option<Vec<String>> {
         let mut in_degree = std::collections::HashMap::new();
         let mut result = Vec::new();
 
-        // Initialize in-degrees / Inicjalizuj stopnie wejściowe
+        // Initialize in-degrees
         for repo in &self.repositories {
             in_degree.insert(repo.clone(), 0);
         }
 
-        // Calculate in-degrees / Oblicz stopnie wejściowe
+        // Calculate in-degrees
         for (_, to) in &self.edges {
             *in_degree.entry(to.clone()).or_insert(0) += 1;
         }
 
-        // Kahn's algorithm / Algorytm Kahna
+        // Kahn's algorithm
         let mut queue: Vec<String> = in_degree
             .iter()
             .filter(|(_, &degree)| degree == 0)
@@ -194,11 +193,11 @@ impl DependencyGraph {
         if result.len() == self.repositories.len() {
             Some(result)
         } else {
-            None // Cycle detected / Wykryto cykl
+            None // Cycle detected
         }
     }
 
-    /// Get repositories that depend on a given repo / Pobierz repozytoria zależne od danego
+    /// Get repositories that depend on a given repo
     pub fn get_dependents(&self, repo_name: &str) -> Vec<String> {
         self.edges
             .iter()

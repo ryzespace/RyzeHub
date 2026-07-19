@@ -1,4 +1,4 @@
-//! Advanced Cryptographic System / Zaawansowany System Kryptograficzny
+//! Advanced Cryptographic System
 //! Multi-layer encryption with key rotation, signatures, and secure storage
 
 pub mod engine;

@@ -1,5 +1,3 @@
-//! Data models / Modele danych
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -107,8 +105,6 @@ pub struct Ticket {
     pub description: String,
     #[serde(default)]
     pub conversation: Vec<ConversationMessage>,
-
-    // Metadata / Metadane
     #[serde(default = "default_priority")]
     pub priority: TicketPriority,
     #[serde(default = "default_status")]
@@ -125,14 +121,10 @@ pub struct Ticket {
     pub category: String,
     #[serde(default)]
     pub tags: Vec<String>,
-
-    // Transfer tracking / Śledzenie transferu
     #[serde(default)]
     pub transferred_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub helpcenter_ticket_id: Option<String>,
-
-    // Security / Bezpieczeństwo
     #[serde(default)]
     pub checksum: Option<String>,
 }
@@ -170,7 +162,6 @@ impl Ticket {
         }
     }
 
-    /// Validate ticket / Waliduj ticket
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
@@ -184,7 +175,6 @@ impl Ticket {
             errors.push("Missing conversation".to_string());
         }
 
-        // Validate each message / Waliduj każdą wiadomość
         for (i, msg) in self.conversation.iter().enumerate() {
             let msg_errors = msg.validate();
             for err in msg_errors {
@@ -199,7 +189,6 @@ impl Ticket {
         }
     }
 
-    /// Normalize ticket data / Normalizuj dane ticketu
     pub fn normalize(&mut self) {
         self.description = self.description.trim().to_string();
         self.conversation.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));

@@ -1,6 +1,3 @@
-//! Ticket Pipeline - High-performance ticket transfer between dashboards
-//! Pipeline do transferu ticketów między dashboardami
-
 mod models;
 mod config;
 mod transformer;
@@ -33,122 +30,86 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Tryb ciągły (polling) / Continuous mode
     #[arg(short, long)]
     continuous: bool,
 
-    /// Interwał w sekundach / Interval in seconds
     #[arg(short, long, default_value = "300")]
     interval: u64,
 
-    /// Poziom logowania / Log level
     #[arg(long, default_value = "info")]
     log_level: String,
 
-    /// Wyłącz auto-kategoryzację / Disable auto-categorization
     #[arg(long)]
     no_categorize: bool,
 
-    /// Wyłącz auto-priorytet / Disable auto-prioritization
     #[arg(long)]
     no_priority: bool,
 
-    /// Wyłącz deduplikację / Disable deduplication
     #[arg(long)]
     no_deduplicate: bool,
 
-    /// Uwzględnij rozwiązane / Include resolved
     #[arg(long)]
     include_resolved: bool,
 
-    /// Uwzględnij zamknięte / Include closed
     #[arg(long)]
     include_closed: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Uruchom health check / Run health check
     Health,
-    /// Wyświetl metryki / Show metrics
     Metrics,
-    /// Waliduj konfigurację / Validate configuration
     Validate,
-    /// Aktualizuj hub z repozytoriami / Update hub with repositories
     Hub {
-        /// Nazwa organizacji GitHub / GitHub organization name
         #[arg(short, long)]
         org: String,
-        /// GitHub token
         #[arg(short, long)]
         token: Option<String>,
-        /// Katalog huba / Hub directory
         #[arg(short, long, default_value = "github_hub")]
         dir: String,
-        /// Generuj Dockerfile / Generate Dockerfiles
         #[arg(long)]
         dockerize: bool,
     },
-    /// Analizuj zależności / Analyze dependencies
     Deps {
-        /// Ścieżka do repozytorium / Repository path
         #[arg(short, long, default_value = ".")]
         path: String,
-        /// Nazwy repozytoriów organizacji / Organization repo names (comma-separated)
         #[arg(short, long)]
         repos: String,
     },
-    /// Generuj Dockerfile / Generate Dockerfile
     Docker {
-        /// Ścieżka do repozytorium / Repository path
         #[arg(short, long, default_value = ".")]
         path: String,
     },
-    /// Szyfruj dane / Encrypt data
     Encrypt {
-        /// Dane do zaszyfrowania / Data to encrypt
         #[arg(short, long)]
         data: String,
-        /// Klucz szyfrowania (base64) / Encryption key (base64)
         #[arg(short, long, env = "ENCRYPTION_KEY")]
         key: String,
     },
-    /// Deszyfruj dane / Decrypt data
     Decrypt {
-        /// Dane do odszyfrowania / Data to decrypt
         #[arg(short, long)]
         data: String,
-        /// Klucz szyfrowania (base64) / Encryption key (base64)
         #[arg(short, long, env = "ENCRYPTION_KEY")]
         key: String,
     },
-    /// Zarządzanie magazynem kluczy / Key vault management
     Vault {
         #[command(subcommand)]
         action: VaultCommands,
     },
-    /// Podpisz dane / Sign data
     Sign {
-        /// Dane do podpisania / Data to sign
         #[arg(short, long)]
         data: String,
-        /// Klucz podpisu (base64) / Signing key (base64)
         #[arg(short, long, env = "SIGNING_KEY")]
         key: String,
     },
-    /// Weryfikuj podpis / Verify signature
     Verify {
-        /// Dane / Data
         #[arg(short, long)]
         data: String,
-        /// Podpis / Signature
         #[arg(short, long)]
         signature: String,
-        /// Klucz podpisu (base64) / Signing key (base64)
         #[arg(short, long, env = "SIGNING_KEY")]
         key: String,
     },
-    /// Detekcja błędów / Error detection
     Errors {
         #[command(subcommand)]
         action: ErrorCommands,
@@ -157,7 +118,6 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum VaultCommands {
-    /// Przechowaj klucz / Store key
     Store {
         #[arg(short, long)]
         key_id: String,
@@ -166,42 +126,33 @@ enum VaultCommands {
         #[arg(short, long)]
         name: String,
     },
-    /// Pobierz klucz / Retrieve key
     Retrieve {
         #[arg(short, long)]
         key_id: String,
     },
-    /// Lista kluczy / List keys
     List,
-    /// Integralność magazynu / Vault integrity
     Integrity,
 }
 
 #[derive(Subcommand)]
 enum ErrorCommands {
-    /// Analizuj komunikat błędu / Analyze error message
     Analyze {
         #[arg(short, long)]
         message: String,
         #[arg(short, long, default_value = "unknown")]
         source: String,
     },
-    /// Statystyki błędów / Error statistics
     Stats,
-    /// Wykryj anomalie / Detect anomalies
     Anomalies,
-    /// Testuj wzorce / Test patterns
     TestPatterns,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables / Załaduj zmienne środowiskowe
     dotenv::dotenv().ok();
 
     let cli = Cli::parse();
 
-    // Initialize logging / Inicjalizacja logowania
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(&cli.log_level))
         .with(tracing_subscriber::fmt::layer().json())
@@ -212,7 +163,6 @@ async fn main() -> Result<()> {
     info!("  Transfer: Client Dashboard → HelpCenter");
     info!("═══════════════════════════════════════════════");
 
-    // Handle subcommands / Obsłuż subkomendy
     if let Some(command) = &cli.command {
         match command {
             Commands::Health => {
@@ -232,7 +182,7 @@ async fn main() -> Result<()> {
             Commands::Validate => {
                 info!("Validating configuration...");
                 let config = PipelineConfig::from_env()?;
-                info!("✓ Configuration valid");
+                info!("Configuration valid");
                 info!("  Auto-categorize: {}", config.auto_categorize);
                 info!("  Auto-priority: {}", config.auto_priority);
                 info!("  Deduplicate: {}", config.deduplicate);
@@ -253,7 +203,7 @@ async fn main() -> Result<()> {
                 let result = hub.update_hub(*dockerize).await?;
 
                 println!("\n═══════════════════════════════════════════════");
-                println!("  HUB UPDATE SUMMARY / PODSUMOWANIE");
+                println!("  HUB UPDATE SUMMARY");
                 println!("═══════════════════════════════════════════════");
                 println!("{}", serde_json::to_string_pretty(&result)?);
 
@@ -268,19 +218,19 @@ async fn main() -> Result<()> {
                 let repo_names: Vec<String> = repos.split(',')
                     .map(|s| s.trim().to_string())
                     .collect();
-                
+
                 let dep_manager = dependency_manager::DependencyManager::new(repo_names);
                 let repo_path = std::path::Path::new(path);
-                
+
                 let deps = dep_manager.find_internal_dependencies(repo_path);
-                
+
                 println!("\n═══════════════════════════════════════════════");
-                println!("  DEPENDENCY ANALYSIS / ANALIZA ZALEŻNOŚCI");
+                println!("  DEPENDENCY ANALYSIS");
                 println!("═══════════════════════════════════════════════");
                 println!("Path: {}", path);
                 println!("Found {} internal dependencies:", deps.len());
                 for dep in &deps {
-                    println!("  • {}", dep);
+                    println!("  - {}", dep);
                 }
                 return Ok(());
             }
@@ -288,14 +238,14 @@ async fn main() -> Result<()> {
                 info!("Generating Dockerfile...");
                 let repo_path = std::path::Path::new(path);
                 let docker_manager = docker_manager::DockerManager::new(path.clone());
-                
+
                 let lang = docker_manager.detect_language(repo_path);
                 info!("Detected language: {}", lang);
-                
+
                 let success = docker_manager.generate_dockerfile(repo_path, &lang);
-                
+
                 if success {
-                    println!("✓ Generated Dockerfile for {} at {}", lang, path);
+                    println!("Generated Dockerfile for {} at {}", lang, path);
                 } else {
                     error!("Failed to generate Dockerfile");
                     std::process::exit(1);
@@ -306,16 +256,16 @@ async fn main() -> Result<()> {
                 info!("Encrypting data...");
                 let engine = crypto::CryptoEngine::new(key)?;
                 let packet = engine.encrypt(data.as_bytes())?;
-                
+
                 let encrypted_str = format!(
                     "ENC:{}:{}:{}",
                     packet.context.key_id,
                     base64::encode(&packet.context.nonce),
                     base64::encode(&packet.ciphertext)
                 );
-                
+
                 println!("\n═══════════════════════════════════════════════");
-                println!("  ENCRYPTION RESULT / WYNIK SZYFROWANIA");
+                println!("  ENCRYPTION RESULT");
                 println!("═══════════════════════════════════════════════");
                 println!("Original: {} bytes", data.len());
                 println!("Encrypted: {} bytes", encrypted_str.len());
@@ -329,16 +279,15 @@ async fn main() -> Result<()> {
             Commands::Decrypt { data, key } => {
                 info!("Decrypting data...");
                 let engine = crypto::CryptoEngine::new(key)?;
-                
-                // Parse encrypted packet / Parsuj zaszyfrowany pakiet
+
                 let parts: Vec<&str> = data.split(':').collect();
                 if parts.len() != 4 || parts[0] != "ENC" {
                     anyhow::bail!("Invalid encrypted data format");
                 }
-                
+
                 let nonce = base64::decode(parts[2])?;
                 let ciphertext = base64::decode(parts[3])?;
-                
+
                 let packet = crypto::engine::EncryptedPacket {
                     context: crypto::engine::EncryptionContext {
                         version: 1,
@@ -353,12 +302,12 @@ async fn main() -> Result<()> {
                     auth_tag: Vec::new(),
                     checksum: String::new(),
                 };
-                
+
                 let decrypted = engine.decrypt(&packet)?;
                 let plaintext = String::from_utf8(decrypted)?;
-                
+
                 println!("\n═══════════════════════════════════════════════");
-                println!("  DECRYPTION RESULT / WYNIK DESZYFROWANIA");
+                println!("  DECRYPTION RESULT");
                 println!("═══════════════════════════════════════════════");
                 println!("Decrypted: {} bytes", plaintext.len());
                 println!("\nDecrypted data:");
@@ -370,13 +319,13 @@ async fn main() -> Result<()> {
                 let current_user = std::env::var("VAULT_USER").unwrap_or_else(|_| "system".to_string());
                 let vault_key = std::env::var("ENCRYPTION_KEY")
                     .map_err(|_| anyhow::anyhow!("ENCRYPTION_KEY not set"))?;
-                
+
                 let mut vault = crypto::SecureVault::new(&vault_key, &vault_path, &current_user)?;
-                
+
                 match action {
                     VaultCommands::Store { key_id, data, name } => {
                         vault.store_key(&key_id, data.as_bytes(), &name, "Stored via CLI", vec![])?;
-                        println!("✓ Key {} stored in vault", key_id);
+                        println!("Key {} stored in vault", key_id);
                     }
                     VaultCommands::Retrieve { key_id } => {
                         let data = vault.retrieve_key(&key_id)?;
@@ -387,12 +336,12 @@ async fn main() -> Result<()> {
                     VaultCommands::List => {
                         let keys = vault.list_keys();
                         println!("\n═══════════════════════════════════════════════");
-                        println!("  VAULT KEYS / KLUCZE W MAGAZYNIE");
+                        println!("  VAULT KEYS");
                         println!("═══════════════════════════════════════════════");
                         println!("Total keys: {}", keys.len());
                         for key in keys {
                             if let Some(meta) = vault.get_key_metadata(&key) {
-                                println!("  • {} - {} ({})", key, meta.name, meta.description);
+                                println!("  - {} - {} ({})", key, meta.name, meta.description);
                             }
                         }
                     }
@@ -407,9 +356,9 @@ async fn main() -> Result<()> {
                 info!("Signing data...");
                 let engine = crypto::SignatureEngine::new(key)?;
                 let signature = engine.sign(data.as_bytes())?;
-                
+
                 println!("\n═══════════════════════════════════════════════");
-                println!("  SIGNATURE RESULT / WYNIK PODPISU");
+                println!("  SIGNATURE RESULT");
                 println!("═══════════════════════════════════════════════");
                 println!("Data: {} bytes", data.len());
                 println!("Algorithm: {}", signature.algorithm);
@@ -423,26 +372,26 @@ async fn main() -> Result<()> {
                 info!("Verifying signature...");
                 let engine = crypto::SignatureEngine::new(key)?;
                 let valid = engine.verify(data.as_bytes(), &signature)?;
-                
+
                 println!("\n═══════════════════════════════════════════════");
-                println!("  VERIFICATION RESULT / WYNIK WERYFIKACJI");
+                println!("  VERIFICATION RESULT");
                 println!("═══════════════════════════════════════════════");
                 if valid {
-                    println!("✓ Signature is VALID");
+                    println!("Signature is VALID");
                 } else {
-                    println!("✗ Signature is INVALID");
+                    println!("Signature is INVALID");
                     std::process::exit(1);
                 }
                 return Ok(());
             }
             Commands::Errors { action } => {
                 let mut engine = error_detection::ErrorDetectionEngine::new();
-                
+
                 match action {
                     ErrorCommands::Analyze { message, source } => {
                         if let Some(error) = engine.detect_error(&message, &source) {
                             println!("\n═══════════════════════════════════════════════");
-                            println!("  ERROR ANALYSIS / ANALIZA BŁĘDU");
+                            println!("  ERROR ANALYSIS");
                             println!("═══════════════════════════════════════════════");
                             println!("Error ID: {}", error.id);
                             println!("Category: {:?}", error.category);
@@ -457,7 +406,7 @@ async fn main() -> Result<()> {
                     ErrorCommands::Stats => {
                         let stats = engine.get_statistics();
                         println!("\n═══════════════════════════════════════════════");
-                        println!("  ERROR STATISTICS / STATYSTYKI BŁĘDÓW");
+                        println!("  ERROR STATISTICS");
                         println!("═══════════════════════════════════════════════");
                         for (category, count) in stats {
                             println!("  {:?}: {}", category, count);
@@ -466,27 +415,26 @@ async fn main() -> Result<()> {
                     ErrorCommands::Anomalies => {
                         let mut detector = error_detection::anomaly::AnomalyDetector::new();
                         detector.track_metric("error_rate", 1000);
-                        
-                        // Sample data / Przykładowe dane
+
                         for i in 0..20 {
                             detector.record("error_rate", 5.0 + (i as f64 * 0.1));
                         }
-                        detector.record("error_rate", 50.0); // Anomaly
-                        
+                        detector.record("error_rate", 50.0);
+
                         let anomalies = detector.detect();
                         println!("\n═══════════════════════════════════════════════");
-                        println!("  ANOMALY DETECTION / DETEKCJA ANOMALII");
+                        println!("  ANOMALY DETECTION");
                         println!("═══════════════════════════════════════════════");
                         println!("Detected {} anomalies", anomalies.len());
                         for anomaly in anomalies {
-                            println!("\n  • {}", anomaly.description);
+                            println!("\n  - {}", anomaly.description);
                             println!("    Severity: {:.2}", anomaly.severity);
                             println!("    Confidence: {:.2}", anomaly.confidence);
                         }
                     }
                     ErrorCommands::TestPatterns => {
                         println!("\n═══════════════════════════════════════════════");
-                        println!("  ERROR PATTERNS / WZORCE BŁĘDÓW");
+                        println!("  ERROR PATTERNS");
                         println!("═══════════════════════════════════════════════");
                         let patterns = engine.get_pattern_stats();
                         for pattern in patterns {
@@ -504,7 +452,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Build configuration / Konfiguracja
     let mut config = PipelineConfig::from_env()?;
     config.auto_categorize = !cli.no_categorize;
     config.auto_priority = !cli.no_priority;
@@ -524,7 +471,6 @@ async fn main() -> Result<()> {
     info!("Filter closed: {}", config.filter_closed);
     info!("═══════════════════════════════════════════════");
 
-    // Initialize pipeline / Inicjalizacja pipeline'a
     let pipeline = TicketPipeline::new(config).await?;
 
     if cli.continuous {
@@ -533,9 +479,9 @@ async fn main() -> Result<()> {
     } else {
         info!("Running pipeline once...");
         let metrics = pipeline.run_once().await?;
-        
+
         info!("═══════════════════════════════════════════════");
-        info!("  PIPELINE SUMMARY / PODSUMOWANIE");
+        info!("  PIPELINE SUMMARY");
         info!("═══════════════════════════════════════════════");
         println!("{}", serde_json::to_string_pretty(&metrics.summary())?);
 
@@ -543,9 +489,9 @@ async fn main() -> Result<()> {
             error!("{} tickets failed!", metrics.failed_count);
             std::process::exit(1);
         } else if metrics.transferred_count == 0 && metrics.fetched_count == 0 {
-            info!("No tickets to transfer. Brak ticketów do przeniesienia.");
+            info!("No tickets to transfer.");
         } else {
-            info!("✓ Successfully transferred {} tickets", metrics.transferred_count);
+            info!("Successfully transferred {} tickets", metrics.transferred_count);
         }
     }
 

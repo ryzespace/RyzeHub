@@ -1,21 +1,20 @@
 # Security & Error Detection System Documentation
-# Dokumentacja Systemu Bezpieczeństwa i Detekcji Błędów
 
-## 📋 Spis treści / Table of Contents
+## Table of Contents
 
-1. [System Szyfrowania / Encryption System](#system-szyfrowania)
-2. [Zarządzanie Kluczami / Key Management](#zarządzanie-kluczami)
+1. [Encryption System](#encryption-system)
+2. [Key Management](#key-management)
 3. [Secure Vault](#secure-vault)
-4. [Podpisy Cyfrowe / Digital Signatures](#podpisy-cyfrowe)
-5. [Detekcja Błędów / Error Detection](#detekcja-błędów)
-6. [Detekcja Anomalii / Anomaly Detection](#detekcja-anomalii)
-7. [Integracja CI/CD](#integracja-cicd)
+4. [Digital Signatures](#digital-signatures)
+5. [Error Detection](#error-detection)
+6. [Anomaly Detection](#anomaly-detection)
+7. [CI/CD Integration](#cicd-integration)
 
 ---
 
-## 🔐 System Szyfrowania
+## Encryption System
 
-### Architektura / Architecture
+### Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -37,51 +36,51 @@
 └─────────────────────────────────────────┘
 ```
 
-### Szyfrowanie danych / Data Encryption
+### Data Encryption
 
 ```rust
-// Utwórz silnik / Create engine
+// Create engine
 let engine = CryptoEngine::new(&base64_key)?;
 
-// Szyfruj / Encrypt
+// Encrypt
 let packet = engine.encrypt(plaintext)?;
-// packet zawiera: context, ciphertext, checksum
+// packet contains: context, ciphertext, checksum
 
-// Deszyfruj / Decrypt
+// Decrypt
 let decrypted = engine.decrypt(&packet)?;
 ```
 
-### Format zaszyfrowanych danych / Encrypted Data Format
+### Encrypted Data Format
 
 ```
 ENC:<key_id>:<nonce_base64>:<ciphertext_base64>
 ```
 
-Przykład / Example:
+Example:
 ```
 ENC:a1b2c3d4e5f6...:dGhpcyBpcyBhIG5vbmNl:Y2lwaGVydGV4dA==
 ```
 
-### Rotacja kluczy / Key Rotation
+### Key Rotation
 
 ```rust
-// Sprawdź czy rotacja potrzebna / Check if rotation needed
+// Check if rotation needed
 if engine.needs_rotation() {
     let new_key_id = engine.rotate_key(&new_key_base64)?;
     info!("Rotated to key: {}", new_key_id);
 }
 ```
 
-**Automatyczna rotacja:**
-- Interwał: 30 dni
-- Stare klucze zachowywane dla deszyfracji
-- Nowe dane szyfrowane aktualnym kluczem
+**Automatic rotation:**
+- Interval: 30 days
+- Old keys retained for decryption
+- New data encrypted with current key
 
 ---
 
-## 🔑 Zarządzanie Kluczami
+## Key Management
 
-### Hierarchia kluczy / Key Hierarchy
+### Key Hierarchy
 
 ```
 Master Key (32 bytes, base64)
@@ -96,24 +95,24 @@ Master Key (32 bytes, base64)
 ### KeyManager API
 
 ```rust
-// Utwórz manager / Create manager
+// Create manager
 let mut manager = KeyManager::new(&master_key_base64)?;
 
-// Wyprowadź klucz / Derive key
+// Derive key
 let enc_key_id = manager.derive_key(KeyPurpose::Encryption, "ticket-data")?;
 let sign_key_id = manager.derive_key(KeyPurpose::Signing, "api-requests")?;
 
-// Generuj klucz sesyjny / Generate session key
+// Generate session key
 let session_key_id = manager.generate_session_key()?;
 
-// Rotuj master key / Rotate master key
+// Rotate master key
 let new_master_id = manager.rotate_master_key(&new_master_key_base64)?;
 
-// Wyczyść wygasłe klucze / Clean expired keys
+// Clean expired keys
 let cleaned = manager.clean_expired_keys();
 ```
 
-### Metadane klucza / Key Metadata
+### Key Metadata
 
 ```rust
 pub struct KeyMetadata {
@@ -129,9 +128,9 @@ pub struct KeyMetadata {
 
 ---
 
-## 🔒 Secure Vault
+## Secure Vault
 
-### Architektura / Architecture
+### Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -153,35 +152,35 @@ pub struct KeyMetadata {
 └─────────────────────────────────────────┘
 ```
 
-### Operacje na vault / Vault Operations
+### Vault Operations
 
 ```bash
-# Przechowaj klucz / Store key
+# Store key
 ticket-pipeline vault store \
   --key-id "api-key-123" \
   --data "secret-api-key-value" \
   --name "Production API Key"
 
-# Pobierz klucz / Retrieve key
+# Retrieve key
 ticket-pipeline vault retrieve --key-id "api-key-123"
 
-# Lista kluczy / List keys
+# List keys
 ticket-pipeline vault list
 
-# Sprawdź integralność / Check integrity
+# Check integrity
 ticket-pipeline vault integrity
 ```
 
-### Kontrola dostępu / Access Control
+### Access Control
 
 ```rust
 pub struct AccessControlList {
-    pub readers: Vec<String>,   // Mogą odczytywać / Can read
-    pub writers: Vec<String>,   // Mogą zapisywać / Can write
-    pub admins: Vec<String>,    // Pełna kontrola / Full control
+    pub readers: Vec<String>,   // Can read
+    pub writers: Vec<String>,   // Can write
+    pub admins: Vec<String>,    // Full control
 }
 
-// Sprawdź uprawnienia / Check permissions
+// Check permissions
 if acl.can_read("user-123") { /* ... */ }
 if acl.can_write("user-123") { /* ... */ }
 if acl.can_admin("user-123") { /* ... */ }
@@ -189,25 +188,25 @@ if acl.can_admin("user-123") { /* ... */ }
 
 ---
 
-## ✍️ Podpisy Cyfrowe
+## Digital Signatures
 
 ### SignatureEngine API
 
 ```rust
-// Utwórz silnik / Create engine
+// Create engine
 let engine = SignatureEngine::new(&signing_key_base64)?;
 
-// Podpisz dane / Sign data
+// Sign data
 let signature = engine.sign(data)?;
 
-// Weryfikuj podpis / Verify signature
-let valid = engine.verify(data, &signature.signature)?;
+// Verify signature
+let valid = engine.verify(data, &signature.signature)?
 ```
 
-### Podpisywanie żądań API / Signing API Requests
+### Signing API Requests
 
 ```rust
-// Podpisz żądanie / Sign request
+// Sign request
 let signature = engine.sign_request(
     "POST",
     "/api/tickets",
@@ -215,7 +214,7 @@ let signature = engine.sign_request(
     "2024-01-01T00:00:00Z"
 )?;
 
-// Weryfikuj / Verify
+// Verify
 let valid = engine.verify_request_signature(
     "POST",
     "/api/tickets",
@@ -225,7 +224,7 @@ let valid = engine.verify_request_signature(
 )?;
 ```
 
-### Format podpisu / Signature Format
+### Signature Format
 
 ```json
 {
@@ -238,9 +237,9 @@ let valid = engine.verify_request_signature(
 
 ---
 
-## 🐛 Detekcja Błędów
+## Error Detection
 
-### Architektura / Architecture
+### Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -260,7 +259,7 @@ let valid = engine.verify_request_signature(
 └─────────────────────────────────────────┘
 ```
 
-### Wbudowane wzorce / Built-in Patterns
+### Built-in Patterns
 
 | Pattern ID | Category | Severity | Regex |
 |------------|----------|----------|-------|
@@ -270,15 +269,15 @@ let valid = engine.verify_request_signature(
 | `validation_error` | Validation | Low | `(validation.*fail\|invalid.*data)` |
 | `connection_error` | Network | High | `(connection.*refused\|503)` |
 
-### Analiza błędów / Error Analysis
+### Error Analysis
 
 ```bash
-# Analizuj komunikat / Analyze message
+# Analyze message
 ticket-pipeline errors analyze \
   --message "Request timeout after 30s" \
   --source "helpcenter_api"
 
-# Wynik / Result:
+# Result:
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "timestamp": "2024-01-01T10:30:00Z",
@@ -290,7 +289,7 @@ ticket-pipeline errors analyze \
 }
 ```
 
-### Dodawanie custom patterns / Adding Custom Patterns
+### Adding Custom Patterns
 
 ```rust
 let pattern = ErrorPattern {
@@ -309,13 +308,13 @@ let pattern = ErrorPattern {
 engine.add_pattern(pattern);
 ```
 
-### Statystyki / Statistics
+### Statistics
 
 ```bash
-# Pokaż statystyki / Show statistics
+# Show statistics
 ticket-pipeline errors stats
 
-# Wynik / Result:
+# Result:
 Timeout: 15
 Authentication: 3
 RateLimit: 7
@@ -323,10 +322,10 @@ Validation: 2
 Network: 5
 ```
 
-### Korelacja błędów / Error Correlation
+### Error Correlation
 
 ```rust
-// Koreluj błędy w oknie 5 minut / Correlate errors in 5-minute window
+// Correlate errors in 5-minute window
 let correlations = engine.correlate_errors(Duration::minutes(5));
 
 for group in correlations {
@@ -336,9 +335,9 @@ for group in correlations {
 
 ---
 
-## 📊 Detekcja Anomalii
+## Anomaly Detection
 
-### Metody detekcji / Detection Methods
+### Detection Methods
 
 #### 1. Z-Score Detection
 
@@ -349,7 +348,7 @@ let anomaly = detector.z_score_detection(metric_name, series, 3.0);
 
 **Formula:** `z = |x - μ| / σ`
 
-**Użycie / Usage:** Wykrywanie outlier'ów statystycznych
+**Usage:** Statistical outlier detection
 
 #### 2. IQR (Interquartile Range)
 
@@ -360,7 +359,7 @@ let anomaly = detector.iqr_detection(metric_name, series, 1.5);
 
 **Formula:** `bounds = [Q1 - 1.5*IQR, Q3 + 1.5*IQR]`
 
-**Użycie / Usage:** Robustna detekcja outliers
+**Usage:** Robust outlier detection
 
 #### 3. Moving Average
 
@@ -371,7 +370,7 @@ let anomaly = detector.moving_average_detection(metric_name, series, 10, 2.0);
 
 **Formula:** `deviation = |current - MA| / MA`
 
-**Użycie / Usage:** Wykrywanie nagłych zmian
+**Usage:** Sudden change detection
 
 #### 4. Exponential Smoothing
 
@@ -382,43 +381,43 @@ let anomaly = detector.exponential_smoothing_detection(metric_name, series, 0.3,
 
 **Formula:** `smoothed = α * current + (1-α) * previous`
 
-**Użycie / Usage:** Wygładzanie szumu, wykrywanie trendów
+**Usage:** Noise smoothing, trend detection
 
-### Typy anomalii / Anomaly Types
+### Anomaly Types
 
 ```rust
 pub enum AnomalyType {
-    Spike,        // Nagły wzrost / Sudden increase
-    Drop,         // Nagły spadek / Sudden decrease
-    Trend,        // Stopniowa zmiana / Gradual change
-    Seasonality,  // Wzorzec sezonowy / Seasonal pattern
-    Outlier,      // Statystyczny outlier / Statistical outlier
+    Spike,        // Sudden increase
+    Drop,         // Sudden decrease
+    Trend,        // Gradual change
+    Seasonality,  // Seasonal pattern
+    Outlier,      // Statistical outlier
 }
 ```
 
-### Monitorowanie metryk / Monitoring Metrics
+### Monitoring Metrics
 
 ```rust
-// Śledź metrykę / Track metric
+// Track metric
 detector.track_metric("error_rate", 1000);
 
-// Zapisz wartość / Record value
+// Record value
 detector.record("error_rate", 5.0);
 
-// Wykryj anomalie / Detect anomalies
+// Detect anomalies
 let anomalies = detector.detect();
 ```
 
-### Przykład użycia / Usage Example
+### Usage Example
 
 ```bash
-# Testuj detekcję anomalii / Test anomaly detection
+# Test anomaly detection
 ticket-pipeline errors anomalies
 
-# Wynik / Result:
+# Result:
 Detected 1 anomalies
 
-  • Z-score anomaly: 4.52 (threshold: 3.00)
+  Z-score anomaly: 4.52 (threshold: 3.00)
     Metric: error_rate
     Current value: 50.0
     Expected range: [2.5, 7.5]
@@ -428,14 +427,14 @@ Detected 1 anomalies
 
 ---
 
-## 🔄 Integracja CI/CD
+## CI/CD Integration
 
 ### Workflow: Security & Encryption
 
-**Plik:** `.github/workflows/security-encryption.yml`
+**File:** `.github/workflows/security-encryption.yml`
 
-**Triggery:**
-- Push do `src/crypto/**`
+**Triggers:**
+- Push to `src/crypto/**`
 - Pull request
 - Weekly schedule (Monday 3:00 AM)
 - Manual
@@ -450,10 +449,10 @@ Detected 1 anomalies
 
 ### Workflow: Error Detection
 
-**Plik:** `.github/workflows/error-detection.yml`
+**File:** `.github/workflows/error-detection.yml`
 
-**Triggery:**
-- Push do `src/error_detection/**`
+**Triggers:**
+- Push to `src/error_detection/**`
 - Pull request
 - Every 15 minutes
 - Manual (unit/integration/full)
@@ -466,10 +465,10 @@ Detected 1 anomalies
 5. Monitoring report generation
 6. Error analytics
 
-### Sekrety GitHub / GitHub Secrets
+### GitHub Secrets
 
 ```bash
-# Szyfrowanie / Encryption
+# Encryption
 ENCRYPTION_KEY=<base64 32 bytes>
 SIGNING_KEY=<base64 32 bytes>
 
@@ -484,7 +483,7 @@ HUB_GITHUB_TOKEN=ghp_...
 HUB_ORG_NAME=my-org
 ```
 
-### Generowanie kluczy / Generating Keys
+### Generating Keys
 
 ```bash
 # Encryption key
@@ -499,7 +498,7 @@ openssl rand -base64 32
 
 ---
 
-## 📈 Metryki i Monitoring
+## Metrics and Monitoring
 
 ### Prometheus Metrics
 
@@ -517,7 +516,7 @@ anomaly_detection_anomalies_total{type="spike|drop|trend|..."}
 anomaly_detection_metrics_tracked{metric_name="..."}
 ```
 
-### Logi audytowe / Audit Logs
+### Audit Logs
 
 ```json
 {
@@ -536,42 +535,42 @@ anomaly_detection_metrics_tracked{metric_name="..."}
 
 ---
 
-## 🎯 Best Practices
+## Best Practices
 
-### 1. Zarządzanie kluczami / Key Management
+### 1. Key Management
 
-- ✓ Używaj silnych kluczy (min. 32 bytes)
-- ✓ Rotuj klucze regularnie (co 30 dni)
-- ✓ Przechowuj klucze w Secure Vault
-- ✓ Nigdy nie commituj kluczy do git
-- ✓ Używaj zmiennych środowiskowych
+- Use strong keys (min. 32 bytes)
+- Rotate keys regularly (every 30 days)
+- Store keys in Secure Vault
+- Never commit keys to git
+- Use environment variables
 
-### 2. Szyfrowanie / Encryption
+### 2. Encryption
 
-- ✓ Szyfruj wszystkie wrażliwe dane
-- ✓ Używaj authenticated encryption (AES-GCM)
-- ✓ Weryfikuj checksumy po deszyfracji
-- ✓ Śledź metadane szyfrowania
+- Encrypt all sensitive data
+- Use authenticated encryption (AES-GCM)
+- Verify checksums after decryption
+- Track encryption metadata
 
-### 3. Detekcja błędów / Error Detection
+### 3. Error Detection
 
-- ✓ Monitoruj wszystkie operacje I/O
-- ✓ Ustaw odpowiednie progi anomalii
-- ✓ Koreluj błędy w oknie czasowym
-- ✓ Automatycznie alertuj przy critical errors
-- ✓ Regularnie przeglądaj statystyki
+- Monitor all I/O operations
+- Set appropriate anomaly thresholds
+- Correlate errors in time window
+- Automatically alert on critical errors
+- Regularly review statistics
 
-### 4. Bezpieczeństwo / Security
+### 4. Security
 
-- ✓ Używaj HTTPS dla wszystkich API calls
-- ✓ Weryfikuj podpisy cyfrowe
-- ✓ Implementuj rate limiting
-- ✓ Używaj circuit breaker pattern
-- ✓ Loguj wszystkie operacje audytowe
+- Use HTTPS for all API calls
+- Verify digital signatures
+- Implement rate limiting
+- Use circuit breaker pattern
+- Log all audit operations
 
 ---
 
-## 📚 Dodatkowe zasoby / Additional Resources
+## Additional Resources
 
 - [Rust Crypto Documentation](https://docs.rs/aes-gcm)
 - [OWASP Cryptographic Guidelines](https://owasp.org/www-project-cheat-sheets/)
@@ -579,6 +578,6 @@ anomaly_detection_metrics_tracked{metric_name="..."}
 
 ---
 
-**Dokumentacja wersji / Version:** 2.0  
-**Data aktualizacji / Last updated:** 2024-01-01  
-**Autor / Author:** Ticket Pipeline Team
+**Version:** 2.0
+**Last updated:** 2024-01-01
+**Author:** Ticket Pipeline Team

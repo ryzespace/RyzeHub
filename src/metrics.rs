@@ -1,8 +1,6 @@
-//! Metrics module / Moduł metryk
-
 use chrono::Utc;
 use prometheus::{
-    self, Encoder, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+    self, Encoder, IntCounter, IntGauge, Registry, TextEncoder,
 };
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -10,19 +8,16 @@ use std::time::Instant;
 
 static START_TIME: OnceLock<Instant> = OnceLock::new();
 
-/// Get or initialize start time
 fn get_start_time() -> Instant {
     *START_TIME.get_or_init(Instant::now)
 }
 
-/// Metrics registry singleton
 static REGISTRY: OnceLock<Registry> = OnceLock::new();
 
 fn get_registry() -> &'static Registry {
     REGISTRY.get_or_init(|| {
         let registry = Registry::new();
 
-        // Register metrics / Zarejestruj metryki
         registry.register(Box::new(tickets_fetched())).unwrap();
         registry.register(Box::new(tickets_transferred())).unwrap();
         registry.register(Box::new(tickets_failed())).unwrap();
@@ -34,8 +29,6 @@ fn get_registry() -> &'static Registry {
         registry
     })
 }
-
-// ─── Metric definitions / Definicje metryk ──────────────────
 
 fn tickets_fetched() -> IntCounter {
     IntCounter::new("pipeline_tickets_fetched_total", "Total tickets fetched from source").unwrap()
@@ -65,44 +58,34 @@ fn active_connections() -> IntGauge {
     IntGauge::new("pipeline_active_connections", "Active connections to APIs").unwrap()
 }
 
-// ─── Public API ──────────────────────────────────────────────
-
-/// Increment fetched counter / Inkrementuj licznik pobranych
 pub fn inc_fetched(count: usize) {
     tickets_fetched().inc_by(count as u64);
 }
 
-/// Increment transferred counter / Inkrementuj licznik przeniesionych
 pub fn inc_transferred(count: usize) {
     tickets_transferred().inc_by(count as u64);
 }
 
-/// Increment failed counter / Inkrementuj licznik błędów
 pub fn inc_failed(count: usize) {
     tickets_failed().inc_by(count as u64);
 }
 
-/// Increment filtered counter / Inkrementuj licznik odfiltrowanych
 pub fn inc_filtered(count: usize) {
     tickets_filtered().inc_by(count as u64);
 }
 
-/// Increment pipeline runs / Inkrementuj licznik uruchomień
 pub fn inc_pipeline_runs() {
     pipeline_runs().inc();
 }
 
-/// Set transfer duration / Ustaw czas transferu
 pub fn set_transfer_duration(ms: u64) {
     transfer_duration_seconds().set(ms as i64);
 }
 
-/// Set active connections / Ustaw aktywne połączenia
 pub fn set_active_connections(count: i64) {
     active_connections().set(count);
 }
 
-/// Get all metrics as Prometheus text format / Pobierz metryki w formacie Prometheus
 pub fn get_metrics() -> String {
     let registry = get_registry();
     let encoder = TextEncoder::new();
@@ -112,7 +95,6 @@ pub fn get_metrics() -> String {
     String::from_utf8(buffer).unwrap()
 }
 
-/// Pipeline run metrics / Metryki uruchomienia pipeline'a
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineMetrics {
     pub started_at: Option<String>,

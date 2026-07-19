@@ -1,4 +1,4 @@
-//! Digital Signature Engine / Silnik Podpisów Cyfrowych
+//! Digital Signature Engine
 //! HMAC-based signatures and verification
 
 use anyhow::Result;
@@ -9,7 +9,7 @@ use tracing::{debug, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Signature result / Wynik podpisu
+/// Signature result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignatureResult {
     pub signature: String,
@@ -18,14 +18,14 @@ pub struct SignatureResult {
     pub timestamp: String,
 }
 
-/// Signature Engine / Silnik Podpisów
+/// Signature Engine
 pub struct SignatureEngine {
     signing_key: Vec<u8>,
     key_id: String,
 }
 
 impl SignatureEngine {
-    /// Create new signature engine / Utwórz nowy silnik podpisów
+    /// Create new signature engine
     pub fn new(signing_key_base64: &str) -> Result<Self> {
         let signing_key = base64::decode(signing_key_base64)?;
         if signing_key.len() < 32 {
@@ -41,7 +41,7 @@ impl SignatureEngine {
         })
     }
 
-    /// Generate key ID / Generuj ID klucza
+    /// Generate key ID
     fn generate_key_id(key: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(key);
@@ -49,7 +49,7 @@ impl SignatureEngine {
         hex::encode(&hash[..16])
     }
 
-    /// Sign data / Podpisz dane
+    /// Sign data
     pub fn sign(&self, data: &[u8]) -> Result<SignatureResult> {
         let mut mac = HmacSha256::new_from_slice(&self.signing_key)
             .map_err(|e| anyhow::anyhow!("HMAC initialization failed: {}", e))?;
@@ -68,7 +68,7 @@ impl SignatureEngine {
         })
     }
 
-    /// Verify signature / Weryfikuj podpis
+    /// Verify signature
     pub fn verify(&self, data: &[u8], signature: &str) -> Result<bool> {
         let mut mac = HmacSha256::new_from_slice(&self.signing_key)
             .map_err(|e| anyhow::anyhow!("HMAC initialization failed: {}", e))?;
@@ -87,13 +87,13 @@ impl SignatureEngine {
         Ok(valid)
     }
 
-    /// Sign ticket / Podpisz ticket
+    /// Sign ticket
     pub fn sign_ticket(&self, ticket_id: &str, description: &str, ticket_type: &str) -> Result<SignatureResult> {
         let data = format!("{}:{}:{}", ticket_id, description, ticket_type);
         self.sign(data.as_bytes())
     }
 
-    /// Verify ticket signature / Weryfikuj podpis ticketu
+    /// Verify ticket signature
     pub fn verify_ticket_signature(
         &self,
         ticket_id: &str,
@@ -105,13 +105,13 @@ impl SignatureEngine {
         self.verify(data.as_bytes(), signature)
     }
 
-    /// Sign API request / Podpisz żądanie API
+    /// Sign API request
     pub fn sign_request(&self, method: &str, path: &str, body: &str, timestamp: &str) -> Result<SignatureResult> {
         let data = format!("{}:{}:{}:{}", method, path, body, timestamp);
         self.sign(data.as_bytes())
     }
 
-    /// Verify API request signature / Weryfikuj podpis żądania API
+    /// Verify API request signature
     pub fn verify_request_signature(
         &self,
         method: &str,
@@ -124,7 +124,7 @@ impl SignatureEngine {
         self.verify(data.as_bytes(), signature)
     }
 
-    /// Get key ID / Pobierz ID klucza
+    /// Get key ID
     pub fn key_id(&self) -> &str {
         &self.key_id
     }

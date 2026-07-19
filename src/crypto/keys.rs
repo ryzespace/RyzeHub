@@ -1,4 +1,4 @@
-//! Key Management System / System Zarządzania Kluczami
+//! Key Management System
 //! Hierarchical key derivation and rotation
 
 use anyhow::Result;
@@ -12,7 +12,7 @@ use tracing::{debug, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Key metadata / Metadane klucza
+/// Key metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyMetadata {
     pub key_id: String,
@@ -24,7 +24,7 @@ pub struct KeyMetadata {
     pub version: u32,
 }
 
-/// Key purpose / Cel klucza
+/// Key purpose
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum KeyPurpose {
     Master,
@@ -34,7 +34,7 @@ pub enum KeyPurpose {
     Session,
 }
 
-/// Key pair / Para kluczy
+/// Key pair
 #[derive(Debug, Clone)]
 pub struct KeyPair {
     pub public_key: Vec<u8>,
@@ -42,7 +42,7 @@ pub struct KeyPair {
     pub metadata: KeyMetadata,
 }
 
-/// Key Manager / Manager Kluczy
+/// Key Manager
 pub struct KeyManager {
     master_key: Vec<u8>,
     keys: HashMap<String, KeyPair>,
@@ -51,7 +51,7 @@ pub struct KeyManager {
 }
 
 impl KeyManager {
-    /// Create new key manager / Utwórz nowy manager kluczy
+    /// Create new key manager
     pub fn new(master_key_base64: &str) -> Result<Self> {
         let master_key = base64::decode(master_key_base64)?;
         if master_key.len() < 32 {
@@ -88,7 +88,7 @@ impl KeyManager {
         })
     }
 
-    /// Generate key ID / Generuj ID klucza
+    /// Generate key ID
     fn generate_key_id(key: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(key);
@@ -97,7 +97,7 @@ impl KeyManager {
         hex::encode(&hash[..16])
     }
 
-    /// Derive child key / Wyprowadź klucz potomny
+    /// Derive child key
     pub fn derive_key(&mut self, purpose: KeyPurpose, info: &str) -> Result<String> {
         let mut mac = HmacSha256::new_from_slice(&self.master_key)
             .map_err(|e| anyhow::anyhow!("HMAC initialization failed: {}", e))?;
@@ -132,17 +132,17 @@ impl KeyManager {
         Ok(key_id)
     }
 
-    /// Get key by ID / Pobierz klucz po ID
+    /// Get key by ID
     pub fn get_key(&self, key_id: &str) -> Option<&KeyPair> {
         self.keys.get(key_id)
     }
 
-    /// Get current encryption key / Pobierz bieżący klucz szyfrowania
+    /// Get current encryption key
     pub fn get_current_key(&self) -> &KeyPair {
         self.keys.get(&self.current_key_id).unwrap()
     }
 
-    /// Rotate master key / Rotuj klucz master
+    /// Rotate master key
     pub fn rotate_master_key(&mut self, new_master_key_base64: &str) -> Result<String> {
         let new_master_key = base64::decode(new_master_key_base64)?;
         if new_master_key.len() < 32 {
@@ -174,7 +174,7 @@ impl KeyManager {
         Ok(key_id)
     }
 
-    /// Check if rotation needed / Sprawdź czy rotacja potrzebna
+    /// Check if rotation needed
     pub fn needs_rotation(&self) -> bool {
         let current_key = self.get_current_key();
         if let Some(expires) = current_key.metadata.expires_at {
@@ -184,7 +184,7 @@ impl KeyManager {
         }
     }
 
-    /// Generate session key / Generuj klucz sesyjny
+    /// Generate session key
     pub fn generate_session_key(&mut self) -> Result<String> {
         let mut rng = rand::thread_rng();
         let mut session_key = vec![0u8; 32];
@@ -213,7 +213,7 @@ impl KeyManager {
         Ok(key_id)
     }
 
-    /// Clean expired keys / Wyczyść wygasłe klucze
+    /// Clean expired keys
     pub fn clean_expired_keys(&mut self) -> usize {
         let now = Utc::now();
         let expired: Vec<String> = self
@@ -239,7 +239,7 @@ impl KeyManager {
         count
     }
 
-    /// Export key metadata / Eksportuj metadane kluczy
+    /// Export key metadata
     pub fn export_metadata(&self) -> Vec<KeyMetadata> {
         self.keys.values().map(|k| k.metadata.clone()).collect()
     }

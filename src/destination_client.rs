@@ -1,4 +1,4 @@
-//! Destination client - HelpCenter API / Klient API helpcenter
+//! Destination client - HelpCenter API
 
 use anyhow::Result;
 use reqwest::Client;
@@ -10,12 +10,12 @@ use crate::errors::PipelineError;
 use crate::models::{BatchTransferResult, Ticket, TransferResult};
 use crate::security::RateLimiter;
 
-/// Circuit breaker state / Stan circuit breaker'a
+/// Circuit breaker state
 #[derive(Debug, Clone, PartialEq)]
 enum CircuitState {
-    Closed,      // Normal operation / Normalna praca
-    Open,        // Failing, reject requests / Błędy, odrzucaj requesty
-    HalfOpen,    // Testing recovery / Testowanie recovery
+    Closed,      // Normal operation
+    Open,        // Failing, reject requests
+    HalfOpen,    // Testing recovery
 }
 
 pub struct HelpCenterClient {
@@ -51,7 +51,7 @@ impl HelpCenterClient {
         })
     }
 
-    /// Check circuit breaker / Sprawdź circuit breaker
+    /// Check circuit breaker
     fn check_circuit(&self) -> Result<()> {
         let state = self.circuit_state.lock().unwrap();
         match *state {
@@ -61,7 +61,7 @@ impl HelpCenterClient {
                     if last_time.elapsed() > self.recovery_timeout {
                         drop(state);
                         drop(last);
-                        // Transition to half-open / Przejdź do half-open
+                        // Transition to half-open
                         *self.circuit_state.lock().unwrap() = CircuitState::HalfOpen;
                         return Ok(());
                     }
@@ -75,13 +75,13 @@ impl HelpCenterClient {
         }
     }
 
-    /// Record success / Zapisz sukces
+    /// Record success
     fn record_success(&self) {
         self.failure_count.store(0, std::sync::atomic::Ordering::SeqCst);
         *self.circuit_state.lock().unwrap() = CircuitState::Closed;
     }
 
-    /// Record failure / Zapisz błąd
+    /// Record failure
     fn record_failure(&self) {
         let count = self.failure_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         *self.last_failure.lock().unwrap() = Some(std::time::Instant::now());
@@ -91,7 +91,7 @@ impl HelpCenterClient {
         }
     }
 
-    /// Create ticket in helpcenter / Utwórz ticket w helpcenter
+    /// Create ticket in helpcenter
     pub async fn create_ticket(&self, ticket: &Ticket) -> Result<String> {
         self.check_circuit()?;
         self.rate_limiter.wait().await;
@@ -164,7 +164,7 @@ impl HelpCenterClient {
         }
     }
 
-    /// Check if ticket exists / Sprawdź czy ticket istnieje
+    /// Check if ticket exists
     pub async fn check_ticket_exists(&self, source_ticket_id: &str) -> Option<String> {
         self.rate_limiter.wait().await;
 
@@ -191,7 +191,7 @@ impl HelpCenterClient {
         }
     }
 
-    /// Batch create tickets / Utwórz wiele ticketów
+    /// Batch create tickets
     pub async fn batch_create_tickets(&self, tickets: &[Ticket]) -> Result<BatchTransferResult> {
         self.check_circuit()?;
         self.rate_limiter.wait().await;
@@ -258,7 +258,7 @@ impl HelpCenterClient {
         })
     }
 
-    /// Health check / Sprawdzenie zdrowia
+    /// Health check
     pub async fn health_check(&self) -> Result<(bool, Duration)> {
         let start = std::time::Instant::now();
         let url = format!("{}/health", self.config.base_url);

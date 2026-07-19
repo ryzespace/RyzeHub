@@ -1,4 +1,4 @@
-//! Cryptographic Engine / Silnik Kryptograficzny
+//! Cryptographic Engine
 //! Multi-layer encryption system
 
 use aes_gcm::{
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
-/// Encryption context with metadata / Kontekst szyfrowania z metadanymi
+/// Encryption context with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptionContext {
     pub version: u8,
@@ -50,7 +50,7 @@ impl EncryptionContext {
     }
 }
 
-/// Encrypted data packet / Pakiet zaszyfrowanych danych
+/// Encrypted data packet
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedPacket {
     pub context: EncryptionContext,
@@ -59,7 +59,7 @@ pub struct EncryptedPacket {
     pub checksum: String,
 }
 
-/// Cryptographic Engine / Silnik Kryptograficzny
+/// Cryptographic Engine
 pub struct CryptoEngine {
     ciphers: HashMap<String, Aes256Gcm>,
     current_key_id: String,
@@ -68,7 +68,7 @@ pub struct CryptoEngine {
 }
 
 impl CryptoEngine {
-    /// Create new crypto engine / Utwórz nowy silnik kryptograficzny
+    /// Create new crypto engine
     pub fn new(master_key_base64: &str) -> Result<Self> {
         let master_key = base64::decode(master_key_base64)?;
         if master_key.len() != 32 {
@@ -92,7 +92,7 @@ impl CryptoEngine {
         })
     }
 
-    /// Generate unique key ID / Generuj unikalne ID klucza
+    /// Generate unique key ID
     fn generate_key_id(key: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(key);
@@ -101,7 +101,7 @@ impl CryptoEngine {
         hex::encode(&hash[..16])
     }
 
-    /// Encrypt data with context / Szyfruj dane z kontekstem
+    /// Encrypt data with context
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedPacket> {
         let context = EncryptionContext::new(self.current_key_id.clone());
 
@@ -115,7 +115,7 @@ impl CryptoEngine {
             .encrypt(nonce, plaintext)
             .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
 
-        // Generate checksum / Generuj sumę kontrolną
+        // Generate checksum
         let checksum = Self::calculate_checksum(&ciphertext);
 
         debug!(
@@ -132,9 +132,9 @@ impl CryptoEngine {
         })
     }
 
-    /// Decrypt data / Deszyfruj dane
+    /// Decrypt data
     pub fn decrypt(&self, packet: &EncryptedPacket) -> Result<Vec<u8>> {
-        // Check expiration / Sprawdź ważność
+        // Check expiration
         if packet.context.is_expired() {
             warn!("Attempting to decrypt expired packet with key {}", packet.context.key_id);
         }
@@ -151,7 +151,7 @@ impl CryptoEngine {
             .decrypt(nonce, packet.ciphertext.as_ref())
             .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
 
-        // Verify checksum / Weryfikuj sumę kontrolną
+        // Verify checksum
         let computed_checksum = Self::calculate_checksum(&packet.ciphertext);
         if computed_checksum != packet.checksum {
             anyhow::bail!("Checksum mismatch - data may be corrupted");
@@ -166,14 +166,14 @@ impl CryptoEngine {
         Ok(plaintext)
     }
 
-    /// Calculate checksum / Oblicz sumę kontrolną
+    /// Calculate checksum
     fn calculate_checksum(data: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(data);
         hex::encode(hasher.finalize())
     }
 
-    /// Rotate encryption key / Rotuj klucz szyfrowania
+    /// Rotate encryption key
     pub fn rotate_key(&mut self, new_key_base64: &str) -> Result<String> {
         let new_key = base64::decode(new_key_base64)?;
         if new_key.len() != 32 {
@@ -192,18 +192,18 @@ impl CryptoEngine {
         Ok(key_id)
     }
 
-    /// Check if rotation needed / Sprawdź czy rotacja potrzebna
+    /// Check if rotation needed
     pub fn needs_rotation(&self) -> bool {
         Utc::now() - self.last_rotation > self.key_rotation_interval
     }
 
-    /// Encrypt ticket fields / Szyfruj pola ticketu
+    /// Encrypt ticket fields
     pub fn encrypt_ticket_fields(
         &self,
         description: &str,
         conversation: &[(String, String)],
     ) -> Result<(String, Vec<(String, String)>)> {
-        // Encrypt description / Szyfruj opis
+        // Encrypt description
         let desc_bytes = description.as_bytes();
         let packet = self.encrypt(desc_bytes)?;
         let encrypted_desc = format!(
@@ -213,7 +213,7 @@ impl CryptoEngine {
             base64::encode(&packet.ciphertext)
         );
 
-        // Encrypt conversation / Szyfruj konwersację
+        // Encrypt conversation
         let mut encrypted_conv = Vec::new();
         for (sender, content) in conversation {
             let content_bytes = content.as_bytes();
@@ -230,13 +230,13 @@ impl CryptoEngine {
         Ok((encrypted_desc, encrypted_conv))
     }
 
-    /// Decrypt ticket fields / Deszyfruj pola ticketu
+    /// Decrypt ticket fields
     pub fn decrypt_ticket_fields(
         &self,
         encrypted_desc: &str,
         encrypted_conv: &[(String, String)],
     ) -> Result<(String, Vec<(String, String)>)> {
-        // Decrypt description / Deszyfruj opis
+        // Decrypt description
         let description = if encrypted_desc.starts_with("ENC:") {
             let packet = self.parse_encrypted_packet(encrypted_desc)?;
             let plaintext = self.decrypt(&packet)?;
@@ -245,7 +245,7 @@ impl CryptoEngine {
             encrypted_desc.to_string()
         };
 
-        // Decrypt conversation / Deszyfruj konwersację
+        // Decrypt conversation
         let mut conversation = Vec::new();
         for (sender, encrypted_content) in encrypted_conv {
             let content = if encrypted_content.starts_with("ENC:") {
@@ -261,7 +261,7 @@ impl CryptoEngine {
         Ok((description, conversation))
     }
 
-    /// Parse encrypted packet from string / Parsuj pakiet z stringa
+    /// Parse encrypted packet from string
     fn parse_encrypted_packet(&self, data: &str) -> Result<EncryptedPacket> {
         let parts: Vec<&str> = data.split(':').collect();
         if parts.len() != 4 || parts[0] != "ENC" {

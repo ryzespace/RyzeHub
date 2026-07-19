@@ -1,11 +1,11 @@
-//! Docker Manager / Manager Docker
-//! Generates Dockerfiles and docker-compose.yml / Generuje Dockerfile i docker-compose.yml
+//! Docker Manager
+//! Generates Dockerfiles and docker-compose.yml
 
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
-/// Docker template for different languages / Szablon Docker dla różnych języków
+/// Docker template for different languages
 #[derive(Debug, Clone)]
 pub struct DockerTemplate {
     pub image: &'static str,
@@ -70,7 +70,7 @@ impl DockerManager {
         Self { hub_dir, templates }
     }
 
-    /// Detect programming language / Wykryj język programowania
+    /// Detect programming language
     pub fn detect_language(&self, repo_path: &Path) -> String {
         let files: Vec<String> = match std::fs::read_dir(repo_path) {
             Ok(entries) => entries
@@ -97,11 +97,11 @@ impl DockerManager {
         .to_string()
     }
 
-    /// Generate Dockerfile / Generuj Dockerfile
+    /// Generate Dockerfile
     pub fn generate_dockerfile(&self, repo_path: &Path, lang: &str) -> bool {
         let dockerfile_path = repo_path.join("Dockerfile");
 
-        // Skip if Dockerfile already exists / Pomiń jeśli Dockerfile już istnieje
+        // Skip if Dockerfile already exists
         if dockerfile_path.exists() {
             debug!("Dockerfile already exists at {}", dockerfile_path.display());
             return true;
@@ -134,7 +134,7 @@ COPY . .
         }
     }
 
-    /// Generate multi-stage Dockerfile for Rust / Generuj multi-stage Dockerfile dla Rust
+    /// Generate multi-stage Dockerfile for Rust
     pub fn generate_rust_dockerfile(&self, repo_path: &Path) -> bool {
         let dockerfile_path = repo_path.join("Dockerfile");
 
@@ -175,7 +175,7 @@ ENTRYPOINT ["/app/app"]
         }
     }
 
-    /// Generate docker-compose.yml / Generuj docker-compose.yml
+    /// Generate docker-compose.yml
     pub fn create_docker_compose(&self, cloned_repos: &HashMap<String, String>) -> bool {
         let mut services = String::new();
 
@@ -212,7 +212,7 @@ services:
         }
     }
 
-    /// Process all repositories / Przetwórz wszystkie repozytoria
+    /// Process all repositories
     pub fn process_repositories(&self, repos: &[(String, std::path::PathBuf)]) -> HashMap<String, String> {
         let mut processed = HashMap::new();
 
@@ -232,7 +232,6 @@ services:
         }
 
         // Generate docker-compose if we have multiple repos
-        // Generuj docker-compose jeśli mamy wiele repo
         if processed.len() > 1 {
             self.create_docker_compose(&processed);
         }

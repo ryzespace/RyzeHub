@@ -1,5 +1,5 @@
-//! Hub Manager / Manager Hub
-//! Orchestrates hub update process / Orkiestruje proces aktualizacji huba
+//! Hub Manager
+//! Orchestrates hub update process
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ impl HubManager {
         })
     }
 
-    /// Run hub update / Uruchom aktualizację huba
+    /// Run hub update
     pub async fn update_hub(&self, dockerize: bool) -> Result<HubUpdateResult> {
         info!("═══════════════════════════════════════════════");
         info!("Hub Update Started / Rozpoczęto aktualizację huba");
@@ -46,14 +46,14 @@ impl HubManager {
 
         let mut result = HubUpdateResult::new();
 
-        // Step 1: Clone all repositories / Krok 1: Klonuj wszystkie repozytoria
+        // Step 1: Clone all repositories
         info!("Step 1: Cloning repositories...");
         let hub_path = PathBuf::from(&self.hub_dir);
         let cloned_repos = self.github.clone_all_repositories(&hub_path).await?;
         result.cloned_count = cloned_repos.len();
         info!("✓ Cloned {} repositories", cloned_repos.len());
 
-        // Step 2: Detect dependencies / Krok 2: Wykryj zależności
+        // Step 2: Detect dependencies
         info!("Step 2: Analyzing dependencies...");
         let repo_names: Vec<String> = self.github.get_repo_names().await?;
         let dep_manager = DependencyManager::new(repo_names);
@@ -64,7 +64,7 @@ impl HubManager {
             dep_graph.edges.len()
         );
 
-        // Step 3: Generate Dockerfiles / Krok 3: Generuj Dockerfile
+        // Step 3: Generate Dockerfiles
         if dockerize {
             info!("Step 3: Generating Dockerfiles...");
             let processed = self.docker.process_repositories(&cloned_repos);
@@ -72,7 +72,7 @@ impl HubManager {
             info!("✓ Generated {} Dockerfiles", processed.len());
         }
 
-        // Step 4: Get build order / Krok 4: Pobierz kolejność buildu
+        // Step 4: Get build order
         info!("Step 4: Calculating build order...");
         match dep_graph.topological_sort() {
             Some(order) => {
@@ -95,7 +95,7 @@ impl HubManager {
         Ok(result)
     }
 
-    /// Get cloned repository paths / Pobierz ścieżki sklonowanych repozytoriów
+    /// Get cloned repository paths
     pub fn get_repo_paths(&self) -> Result<HashMap<String, PathBuf>> {
         let mut paths = HashMap::new();
         let hub_path = PathBuf::from(&self.hub_dir);
@@ -117,7 +117,7 @@ impl HubManager {
     }
 }
 
-/// Hub update result / Wynik aktualizacji huba
+/// Hub update result
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HubUpdateResult {
     pub cloned_count: usize,

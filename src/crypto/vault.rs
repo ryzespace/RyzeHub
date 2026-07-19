@@ -1,4 +1,4 @@
-//! Secure Key Vault / Bezpieczny Magazyn Kluczy
+//! Secure Key Vault
 //! Encrypted storage with access control
 
 use anyhow::Result;
@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
-/// Vault entry / Wpis w magazynie
+/// Vault entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultEntry {
     pub key_id: String,
@@ -21,7 +21,7 @@ pub struct VaultEntry {
     pub access_count: u64,
 }
 
-/// Vault metadata / Metadane magazynu
+/// Vault metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultMetadata {
     pub name: String,
@@ -30,7 +30,7 @@ pub struct VaultMetadata {
     pub acl: AccessControlList,
 }
 
-/// Access control list / Lista kontroli dostępu
+/// Access control list
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessControlList {
     pub readers: Vec<String>,
@@ -62,7 +62,7 @@ impl AccessControlList {
     }
 }
 
-/// Secure Vault / Bezpieczny Magazyn
+/// Secure Vault
 pub struct SecureVault {
     entries: HashMap<String, VaultEntry>,
     vault_key: Vec<u8>,
@@ -71,7 +71,7 @@ pub struct SecureVault {
 }
 
 impl SecureVault {
-    /// Create new vault / Utwórz nowy magazyn
+    /// Create new vault
     pub fn new(vault_key_base64: &str, vault_path: &str, current_user: &str) -> Result<Self> {
         let vault_key = base64::decode(vault_key_base64)?;
         if vault_key.len() != 32 {
@@ -85,7 +85,7 @@ impl SecureVault {
             current_user: current_user.to_string(),
         };
 
-        // Load existing vault if exists / Załaduj istniejący magazyn
+        // Load existing vault if exists
         if Path::new(vault_path).exists() {
             vault.load()?;
         }
@@ -94,7 +94,7 @@ impl SecureVault {
         Ok(vault)
     }
 
-    /// Store key in vault / Przechowaj klucz w magazynie
+    /// Store key in vault
     pub fn store_key(
         &mut self,
         key_id: &str,
@@ -103,13 +103,13 @@ impl SecureVault {
         description: &str,
         tags: Vec<String>,
     ) -> Result<()> {
-        // Check permissions / Sprawdź uprawnienia
+        // Check permissions
         let acl = AccessControlList::new();
         if !acl.can_write(&self.current_user) && !acl.admins.is_empty() {
             anyhow::bail!("User {} does not have write permission", self.current_user);
         }
 
-        // Encrypt key data / Szyfruj dane klucza
+        // Encrypt key data
         let encrypted_data = self.encrypt_vault_data(key_data)?;
 
         let metadata = VaultMetadata {
@@ -135,14 +135,14 @@ impl SecureVault {
         Ok(())
     }
 
-    /// Retrieve key from vault / Pobierz klucz z magazynu
+    /// Retrieve key from vault
     pub fn retrieve_key(&mut self, key_id: &str) -> Result<Vec<u8>> {
         let entry = self
             .entries
             .get_mut(key_id)
             .ok_or_else(|| anyhow::anyhow!("Key {} not found in vault", key_id))?;
 
-        // Check permissions / Sprawdź uprawnienia
+        // Check permissions
         if !entry.metadata.acl.can_read(&self.current_user) && !entry.metadata.acl.readers.is_empty()
         {
             anyhow::bail!(
@@ -152,10 +152,10 @@ impl SecureVault {
             );
         }
 
-        // Decrypt key data / Deszyfruj dane klucza
+        // Decrypt key data
         let key_data = self.decrypt_vault_data(&entry.encrypted_data)?;
 
-        // Update access metadata / Aktualizuj metadane dostępu
+        // Update access metadata
         entry.last_accessed = Utc::now();
         entry.access_count += 1;
         self.save()?;
@@ -164,14 +164,14 @@ impl SecureVault {
         Ok(key_data)
     }
 
-    /// Delete key from vault / Usuń klucz z magazynu
+    /// Delete key from vault
     pub fn delete_key(&mut self, key_id: &str) -> Result<()> {
         let entry = self
             .entries
             .get(key_id)
             .ok_or_else(|| anyhow::anyhow!("Key {} not found in vault", key_id))?;
 
-        // Check permissions / Sprawdź uprawnienia
+        // Check permissions
         if !entry.metadata.acl.can_admin(&self.current_user)
             && !entry.metadata.acl.admins.is_empty()
         {
@@ -189,17 +189,17 @@ impl SecureVault {
         Ok(())
     }
 
-    /// List all keys in vault / Lista wszystkich kluczy w magazynie
+    /// List all keys in vault
     pub fn list_keys(&self) -> Vec<String> {
         self.entries.keys().cloned().collect()
     }
 
-    /// Get key metadata / Pobierz metadane klucza
+    /// Get key metadata
     pub fn get_key_metadata(&self, key_id: &str) -> Option<&VaultMetadata> {
         self.entries.get(key_id).map(|e| &e.metadata)
     }
 
-    /// Encrypt vault data / Szyfruj dane magazynu
+    /// Encrypt vault data
     fn encrypt_vault_data(&self, data: &[u8]) -> Result<Vec<u8>> {
         use aes_gcm::{
             aead::{Aead, KeyInit},
@@ -218,7 +218,7 @@ impl SecureVault {
             .encrypt(nonce, data)
             .map_err(|e| anyhow::anyhow!("Vault encryption failed: {}", e))?;
 
-        // Prepend nonce / Dołącz nonce na początku
+        // Prepend nonce
         let mut result = Vec::with_capacity(12 + ciphertext.len());
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&ciphertext);
@@ -226,7 +226,7 @@ impl SecureVault {
         Ok(result)
     }
 
-    /// Decrypt vault data / Deszyfruj dane magazynu
+    /// Decrypt vault data
     fn decrypt_vault_data(&self, data: &[u8]) -> Result<Vec<u8>> {
         use aes_gcm::{
             aead::{Aead, KeyInit},
@@ -250,7 +250,7 @@ impl SecureVault {
         Ok(plaintext)
     }
 
-    /// Save vault to disk / Zapisz magazyn na dysk
+    /// Save vault to disk
     fn save(&self) -> Result<()> {
         let vault_data = serde_json::to_string_pretty(&self.entries)?;
         fs::write(&self.vault_path, vault_data)?;
@@ -258,7 +258,7 @@ impl SecureVault {
         Ok(())
     }
 
-    /// Load vault from disk / Załaduj magazyn z dysku
+    /// Load vault from disk
     fn load(&mut self) -> Result<()> {
         let vault_data = fs::read_to_string(&self.vault_path)?;
         self.entries = serde_json::from_str(&vault_data)?;
@@ -266,7 +266,7 @@ impl SecureVault {
         Ok(())
     }
 
-    /// Generate vault integrity hash / Generuj hash integralności magazynu
+    /// Generate vault integrity hash
     pub fn integrity_hash(&self) -> String {
         let mut hasher = Sha256::new();
         for (key_id, entry) in &self.entries {
