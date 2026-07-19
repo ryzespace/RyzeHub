@@ -125,7 +125,7 @@ cargo run
 ./target/release/ticket-pipeline hub --org my-org --token $GITHUB_TOKEN --dir github_hub --dockerize
 
 # Dependency analysis
-./target/release/ticket-pipeline deps --path ./my-repo --repos "lib-a,lib-b,lib-c"
+./target/release/ticket-pipeline deps --path ./my-repo --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
 
 # Generate Dockerfile
 ./target/release/ticket-pipeline docker --path ./my-repo
@@ -372,7 +372,7 @@ pipeline_active_connections           # Active connections
 ticket-pipeline hub --org my-org --token $TOKEN --dir github_hub --dockerize
 
 # Dependency Analysis
-ticket-pipeline deps --path ./repo --repos "lib-a,lib-b,lib-c"
+ticket-pipeline deps --path ./repo --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
 
 # Docker Generation
 ticket-pipeline docker --path ./repo
@@ -443,12 +443,12 @@ cargo test -- --nocapture
 
 ```bash
 # Analyze dependencies in repository
-ticket-pipeline deps --path ./my-service --repos "core-lib,shared-utils,api-client"
+ticket-pipeline deps --path ./github_hub/RyzeSpace.Client --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
 
 # Result:
 # Found 2 internal dependencies:
-#   core-lib
-#   shared-utils
+#   RyzeSpace.HelpCenter
+#   RyzeSpace.Mobile
 ```
 
 ---
@@ -501,7 +501,7 @@ ticket-pipeline hub \
 # Cloned: 15 repos
 # Dependencies: 23 edges
 # Dockerized: 15 repos
-# Build order: core-lib → shared-utils → api-client → my-service
+# Build order: RyzeSpace.HelpCenter -> RyzeSpace.Client -> RyzeSpace.AdminPanel -> RyzeSpace.Mobile -> RyzeSpace.Desktop
 ```
 
 ---
@@ -681,5 +681,4 @@ spec:
 ## License
 
 MIT
-
 

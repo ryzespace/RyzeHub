@@ -196,8 +196,8 @@ export GITHUB_TOKEN="ghp_your_token_here"
 
 # Analyze dependencies
 ./target/release/ticket-pipeline deps \
-  --path github_hub/service-a \
-  --repos "lib-core,shared-utils,api-client"
+  --path github_hub/RyzeSpace.Client \
+  --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
 ```
 
 ---

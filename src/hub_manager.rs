@@ -2,13 +2,14 @@
 //! Orchestrates hub update process
 
 use anyhow::Result;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use tracing::{error, info};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use tracing::{error, info, warn};
 
 use crate::dependency_manager::DependencyManager;
 use crate::docker_manager::DockerManager;
 use crate::github_manager::{GitHubManager, GitHubManagerConfig};
+use crate::hub_catalog;
 
 pub struct HubManager {
     github: GitHubManager,
@@ -53,6 +54,44 @@ impl HubManager {
         result.cloned_count = cloned_repos.len();
         info!("✓ Cloned {} repositories", cloned_repos.len());
 
+        let cloned_repo_names: HashSet<String> = cloned_repos
+            .iter()
+            .map(|(repo_name, _)| {
+                hub_catalog::resolve_canonical_repository_name(repo_name)
+                    .unwrap_or(repo_name.as_str())
+                    .to_string()
+            })
+            .collect();
+
+        result.active_repositories = hub_catalog::active_repository_names()
+            .into_iter()
+            .filter(|repo_name| cloned_repo_names.contains(repo_name))
+            .collect();
+        result.missing_active_repositories = hub_catalog::active_repository_names()
+            .into_iter()
+            .filter(|repo_name| !cloned_repo_names.contains(repo_name))
+            .collect();
+        result.future_dependency_targets = hub_catalog::future_repository_names();
+
+        if !result.active_repositories.is_empty() {
+            info!(
+                "✓ Active hub repositories available: {}",
+                result.active_repositories.join(", ")
+            );
+        }
+
+        if !result.missing_active_repositories.is_empty() {
+            warn!(
+                "Missing active hub repositories: {}",
+                result.missing_active_repositories.join(", ")
+            );
+        }
+
+        info!(
+            "Future dependency targets configured: {}",
+            result.future_dependency_targets.join(", ")
+        );
+
         // Step 2: Detect dependencies
         info!("Step 2: Analyzing dependencies...");
         let repo_names: Vec<String> = self.github.get_repo_names().await?;
@@ -90,6 +129,11 @@ impl HubManager {
         info!("  Cloned: {} repos", result.cloned_count);
         info!("  Dependencies: {} edges", result.dependency_edges);
         info!("  Dockerized: {} repos", result.dockerized_count);
+        info!("  Active repos: {}", result.active_repositories.join(", "));
+        info!(
+            "  Future targets: {}",
+            result.future_dependency_targets.join(", ")
+        );
         info!("═══════════════════════════════════════════════");
 
         Ok(result)
@@ -124,6 +168,9 @@ pub struct HubUpdateResult {
     pub dependency_edges: usize,
     pub dockerized_count: usize,
     pub build_order: Vec<String>,
+    pub active_repositories: Vec<String>,
+    pub missing_active_repositories: Vec<String>,
+    pub future_dependency_targets: Vec<String>,
     pub errors: Vec<String>,
 }
 
@@ -134,6 +181,9 @@ impl HubUpdateResult {
             dependency_edges: 0,
             dockerized_count: 0,
             build_order: Vec::new(),
+            active_repositories: Vec::new(),
+            missing_active_repositories: Vec::new(),
+            future_dependency_targets: Vec::new(),
             errors: Vec::new(),
         }
     }

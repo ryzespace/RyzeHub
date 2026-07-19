@@ -1,9 +1,11 @@
 //! Dependency Manager
 //! Scans repositories for internal dependencies
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
+
+use crate::hub_catalog;
 
 pub struct DependencyManager {
     org_repos_names: Vec<String>,
@@ -11,12 +13,34 @@ pub struct DependencyManager {
 
 impl DependencyManager {
     pub fn new(org_repos_names: Vec<String>) -> Self {
-        Self { org_repos_names }
+        let mut names = Vec::new();
+
+        for repo_name in org_repos_names
+            .into_iter()
+            .chain(hub_catalog::tracked_repository_names())
+        {
+            let canonical_name = hub_catalog::resolve_canonical_repository_name(&repo_name)
+                .unwrap_or(repo_name.as_str())
+                .to_string();
+
+            if !names.contains(&canonical_name) {
+                names.push(canonical_name);
+            }
+        }
+
+        Self {
+            org_repos_names: names,
+        }
     }
 
     /// Find internal dependencies in a repository
     pub fn find_internal_dependencies(&self, repo_path: &Path) -> Vec<String> {
         let mut dependencies = HashSet::new();
+        let current_repo_name = repo_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(hub_catalog::resolve_canonical_repository_name)
+            .map(|name| name.to_string());
 
         let files_to_scan = [
             "requirements.txt",
@@ -36,7 +60,9 @@ impl DependencyManager {
                         for repo_name in &self.org_repos_names {
                             // Check if repo name appears in dependency file
                             if self.contains_dependency(&content, repo_name) {
-                                dependencies.insert(repo_name.clone());
+                                if current_repo_name.as_ref() != Some(repo_name) {
+                                    dependencies.insert(repo_name.clone());
+                                }
                                 debug!(
                                     "Found dependency {} in {}",
                                     repo_name,
@@ -52,7 +78,8 @@ impl DependencyManager {
             }
         }
 
-        let deps: Vec<String> = dependencies.into_iter().collect();
+        let mut deps: Vec<String> = dependencies.into_iter().collect();
+        deps.sort();
         if !deps.is_empty() {
             info!(
                 "Found {} internal dependencies in {}",
@@ -66,43 +93,19 @@ impl DependencyManager {
 
     /// Check if content contains dependency reference
     fn contains_dependency(&self, content: &str, repo_name: &str) -> bool {
-        // For Rust/Cargo - check for git dependencies
-        if content.contains("git = ") && content.contains(repo_name) {
-            return true;
-        }
+        let normalized_content = hub_catalog::normalize_repository_token(content);
 
-        // For Python - check for package names
-        if content.contains(repo_name) {
-            // Check common patterns
-            let patterns = [
-                format!("{}==", repo_name),
-                format!("{}>=", repo_name),
-                format!("{}<=", repo_name),
-                format!("{}~=", repo_name),
-                format!("{}!=", repo_name),
-                repo_name.to_string(),
-            ];
-
-            for pattern in &patterns {
-                if content.contains(pattern) {
-                    return true;
-                }
+        for identifier in hub_catalog::dependency_identifiers(repo_name) {
+            if content.contains(&identifier) {
+                return true;
             }
-        }
 
-        // For Node.js - check package.json dependencies
-        if content.contains(&format!("\"{}\"", repo_name)) {
-            return true;
-        }
-
-        // For Go - check import paths
-        if content.contains(&format!("github.com/{}", repo_name)) {
-            return true;
-        }
-
-        // For Java/Kotlin - check group IDs
-        if content.contains(&format!("com.{}", repo_name)) {
-            return true;
+            let normalized_identifier = hub_catalog::normalize_repository_token(&identifier);
+            if !normalized_identifier.is_empty()
+                && normalized_content.contains(&normalized_identifier)
+            {
+                return true;
+            }
         }
 
         false
@@ -113,8 +116,11 @@ impl DependencyManager {
         let mut graph = DependencyGraph::new();
 
         for (repo_name, repo_path) in repos {
+            let canonical_name = hub_catalog::resolve_canonical_repository_name(repo_name)
+                .unwrap_or(repo_name.as_str())
+                .to_string();
             let deps = self.find_internal_dependencies(repo_path);
-            graph.add_repository(repo_name.clone(), deps);
+            graph.add_repository(canonical_name, deps);
         }
 
         info!(
@@ -155,7 +161,8 @@ impl DependencyGraph {
 
     /// Get topological order for build
     pub fn topological_sort(&self) -> Option<Vec<String>> {
-        let mut in_degree = std::collections::HashMap::new();
+        let mut in_degree = HashMap::new();
+        let mut dependents = HashMap::<String, Vec<String>>::new();
         let mut result = Vec::new();
 
         // Initialize in-degrees
@@ -164,8 +171,12 @@ impl DependencyGraph {
         }
 
         // Calculate in-degrees
-        for (_, to) in &self.edges {
-            *in_degree.entry(to.clone()).or_insert(0) += 1;
+        for (repo, dependency) in &self.edges {
+            *in_degree.entry(repo.clone()).or_insert(0) += 1;
+            dependents
+                .entry(dependency.clone())
+                .or_default()
+                .push(repo.clone());
         }
 
         // Kahn's algorithm
@@ -178,8 +189,8 @@ impl DependencyGraph {
         while let Some(repo) = queue.pop() {
             result.push(repo.clone());
 
-            if let Some(dependents) = self.adjacency.get(&repo) {
-                for dependent in dependents {
+            if let Some(next_repos) = dependents.get(&repo) {
+                for dependent in next_repos {
                     if let Some(degree) = in_degree.get_mut(dependent) {
                         *degree -= 1;
                         if *degree == 0 {
@@ -249,6 +260,40 @@ my-rust-lib = { git = "https://github.com/org/my-rust-lib" }
         let deps = manager.find_internal_dependencies(repo_path);
 
         assert_eq!(deps, vec!["my-rust-lib"]);
+    }
+
+    #[test]
+    fn test_find_hub_dependencies_by_alias() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path().join("frontend");
+        fs::create_dir_all(&repo_path).unwrap();
+
+        fs::write(
+            repo_path.join("package.json"),
+            r#"
+{
+  "dependencies": {
+    "@ryzespace/client": "workspace:*",
+    "@ryzespace/helpcenter": "^1.0.0"
+  }
+}
+"#,
+        )
+        .unwrap();
+
+        let manager = DependencyManager::new(vec![
+            "RyzeSpace.Client".to_string(),
+            "RyzeSpace.HelpCenter".to_string(),
+        ]);
+        let deps = manager.find_internal_dependencies(&repo_path);
+
+        assert_eq!(
+            deps,
+            vec![
+                "RyzeSpace.Client".to_string(),
+                "RyzeSpace.HelpCenter".to_string()
+            ]
+        );
     }
 
     #[test]

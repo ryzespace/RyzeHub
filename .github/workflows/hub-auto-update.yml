@@ -7,35 +7,48 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  HUB_ACTIVE_REPOS: "RyzeSpace.Client,RyzeSpace.HelpCenter"
+  HUB_FUTURE_REPOS: "RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
 
 jobs:
-  # ─── ORIGINAL HUB UPDATE ────────────────────────────────────
+  build-pipeline:
+    name: Build Rust Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ticket-pipeline-binary
+          path: target/release/ticket-pipeline
+          if-no-files-found: error
+
   update-hub:
     name: Update Hub
     runs-on: ubuntu-latest
+    needs: build-pipeline
     outputs:
       hub-updated: ${{ steps.update.outputs.updated }}
     steps:
-      - name: Checkout code
-        run: |
-          git clone --depth 1 https://github.com/${{ github.repository }}.git
-          cd RyzeHub
-          git checkout ${{ github.sha }}
-          mv * ../
-          mv .* ../ 2>/dev/null || true
-          cd ..
-          rm -rf RyzeHub
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ticket-pipeline-binary
+          path: bin
 
-      - name: Set up Python
-        run: |
-          python3 --version || apt-get update && apt-get install -y python3 python3-pip
-          python3 -m pip install --upgrade pip
-
-      - name: Install dependencies
-        run: |
-          if [ -f requirements.txt ]; then
-            python3 -m pip install -r requirements.txt || true
-          fi
+      - name: Make binary executable
+        run: chmod +x ./bin/ticket-pipeline
 
       - name: Run Hub Update
         id: update
@@ -43,81 +56,45 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.HUB_GITHUB_TOKEN }}
           ORG_NAME: ${{ secrets.HUB_ORG_NAME }}
         run: |
-          if [ -f main.py ]; then
-            python3 main.py --org $ORG_NAME --token $GITHUB_TOKEN --dockerize || true
-          fi
+          ./bin/ticket-pipeline hub \
+            --org "$ORG_NAME" \
+            --token "$GITHUB_TOKEN" \
+            --dir github_hub \
+            --dockerize
           echo "updated=true" >> $GITHUB_OUTPUT
 
-      - name: Archive Hub Result
-        run: |
-          mkdir -p artifacts
-          if [ -d github_hub ]; then
-            cp -r github_hub artifacts/
-          fi
+      - name: Upload hub snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-hub-snapshot
+          path: github_hub
+          if-no-files-found: warn
 
-  # ─── BUILD RUST PIPELINE ────────────────────────────────────
-  build-pipeline:
-    name: Build Rust Pipeline
-    runs-on: ubuntu-latest
-    needs: update-hub
-    if: needs.update-hub.outputs.hub-updated == 'true' || github.event_name == 'workflow_dispatch'
-    steps:
-      - name: Checkout code
-        run: |
-          git clone --depth 1 https://github.com/${{ github.repository }}.git
-          cd RyzeHub
-          git checkout ${{ github.sha }}
-          mv * ../
-          mv .* ../ 2>/dev/null || true
-          cd ..
-          rm -rf RyzeHub
-
-      - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          source $HOME/.cargo/env
-
-      - name: Cache cargo (manual)
-        run: |
-          echo "Cargo caching disabled due to organization policy"
-
-      - name: Build release binary
-        run: |
-          source $HOME/.cargo/env
-          cargo build --release
-
-      - name: Upload binary
-        run: |
-          mkdir -p artifacts
-          cp target/release/ticket-pipeline artifacts/ || true
-
-  # ─── RUN PIPELINE SYNC ──────────────────────────────────────
   sync-tickets:
     name: Sync Tickets to HelpCenter
     runs-on: ubuntu-latest
-    needs: build-pipeline
+    needs:
+      - build-pipeline
+      - update-hub
+    if: needs.update-hub.outputs.hub-updated == 'true' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
-        run: |
-          git clone --depth 1 https://github.com/${{ github.repository }}.git
-          cd RyzeHub
-          git checkout ${{ github.sha }}
-          mv * ../
-          mv .* ../ 2>/dev/null || true
-          cd ..
-          rm -rf RyzeHub
+        uses: actions/checkout@v4
 
-      - name: Download binary
-        run: |
-          mkdir -p bin
-          if [ -f artifacts/ticket-pipeline ]; then
-            cp artifacts/ticket-pipeline bin/
-          else
-            echo "Binary not found in artifacts"
-          fi
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ticket-pipeline-binary
+          path: bin
+
+      - name: Download hub snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: github-hub-snapshot
+          path: .
 
       - name: Make binary executable
-        run: chmod +x ./bin/ticket-pipeline || true
+        run: chmod +x ./bin/ticket-pipeline
 
       - name: Validate configuration
         env:
@@ -126,7 +103,7 @@ jobs:
           HELPCENTER_URL: ${{ secrets.HELPCENTER_URL }}
           HELPCENTER_API_KEY: ${{ secrets.HELPCENTER_API_KEY }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-        run: ./bin/ticket-pipeline validate || true
+        run: ./bin/ticket-pipeline validate
 
       - name: Health check
         env:
@@ -135,7 +112,7 @@ jobs:
           HELPCENTER_URL: ${{ secrets.HELPCENTER_URL }}
           HELPCENTER_API_KEY: ${{ secrets.HELPCENTER_API_KEY }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-        run: ./bin/ticket-pipeline health || true
+        run: ./bin/ticket-pipeline health
 
       - name: Run ticket pipeline
         env:
@@ -147,21 +124,29 @@ jobs:
           PIPELINE_LOG_LEVEL: info
           AUDIT_LOG_ENABLED: "true"
           CHECKSUM_ENABLED: "true"
-        run: ./bin/ticket-pipeline || true
+        run: ./bin/ticket-pipeline
 
-      - name: Upload metrics
+      - name: Export metrics
         if: always()
-        run: ./bin/ticket-pipeline metrics > metrics.txt || true
+        run: ./bin/ticket-pipeline metrics > metrics.txt
 
-      - name: Upload artifacts
+      - name: Upload metrics artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-metrics
+          path: metrics.txt
+          if-no-files-found: warn
+
+      - name: Generate summary
         if: always()
         run: |
-          mkdir -p artifacts
-          if [ -f metrics.txt ]; then
-            cp metrics.txt artifacts/
-          fi
+          echo "## Pipeline Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Source repo: RyzeSpace.Client" >> $GITHUB_STEP_SUMMARY
+          echo "- Destination repo: RyzeSpace.HelpCenter" >> $GITHUB_STEP_SUMMARY
+          echo "- Future targets: $HUB_FUTURE_REPOS" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "::error::Ticket Pipeline sync failed after Hub update!"
+        run: echo "::error::Ticket Pipeline sync failed after Hub update!"

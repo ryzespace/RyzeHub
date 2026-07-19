@@ -34,9 +34,6 @@ base64 = "0.21"
 rand = "0.8"
 hex = "0.4"
 
-# Crypto utilities
-uuid = { version = "1.6", features = ["v4", "serde"] }
-
 # Metrics
 prometheus = "0.13"
 

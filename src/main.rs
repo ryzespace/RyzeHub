@@ -10,6 +10,7 @@ mod errors;
 mod dependency_manager;
 mod docker_manager;
 mod github_manager;
+mod hub_catalog;
 mod hub_manager;
 mod crypto;
 mod error_detection;
@@ -160,7 +161,7 @@ async fn main() -> Result<()> {
 
     info!("═══════════════════════════════════════════════");
     info!("  Ticket Pipeline v{}", env!("CARGO_PKG_VERSION"));
-    info!("  Transfer: Client Dashboard → HelpCenter");
+    info!("  Transfer: RyzeSpace.Client -> RyzeSpace.HelpCenter");
     info!("═══════════════════════════════════════════════");
 
     if let Some(command) = &cli.command {
