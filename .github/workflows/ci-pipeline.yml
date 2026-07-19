@@ -67,17 +67,9 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           source $HOME/.cargo/env
 
-      - name: Cache cargo
-        uses: actions/cache@v3
-        continue-on-error: true
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo (manual)
+        run: |
+          echo "Cargo caching disabled due to organization policy"
 
       - name: Build
         run: |
@@ -169,17 +161,9 @@ jobs:
           source $HOME/.cargo/env
           rustup target add ${{ matrix.target }}
 
-      - name: Cache cargo
-        uses: actions/cache@v3
-        continue-on-error: true
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo (manual)
+        run: |
+          echo "Cargo caching disabled due to organization policy"
 
       - name: Build
         run: |
