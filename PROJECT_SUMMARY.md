@@ -113,6 +113,111 @@ Output:
 
 ---
 
+### HUB PLATFORM LAYER (NEW)
+
+**Core implementation:** `src/hub_platform.rs`
+
+The hub now exposes a first-class platform capability catalog with 17 shared modules:
+
+1. **Real Time Event System**
+   - Realtime event delivery for support status updates, payment completion, server activation, security warnings and new messages
+   - Shared event topics for web, mobile and desktop clients
+
+2. **Notification Center**
+   - Unified notification routing for mobile push, desktop notifications, email, SMS, Discord webhooks and Slack webhooks
+   - Centralized channel management from one place
+
+3. **Audit Log Engine**
+   - Tracks logins, settings changes, admin actions, financial operations and permission changes
+   - Supports trust, diagnostics and incident investigation
+
+4. **Permission & Role Hub**
+   - Business roles: User, Seller, Moderator, Support, Admin, SuperAdmin
+   - Granular permissions such as `server:create`, `server:delete`, `billing:view`, `billing:manage`
+
+5. **Presence System**
+   - Tracks online/offline state, last activity and active devices
+
+6. **Device Management**
+   - Device list, trust state, detection time and device revocation
+
+7. **Session Manager**
+   - Central session control across web, mobile and desktop clients
+
+8. **API Gateway**
+   - Shared entry point with auth, cache and rate limiting configuration
+
+9. **Distributed Cache**
+   - Redis-style cache entries for sessions, settings and frequently used data
+
+10. **Activity Feed**
+    - Timeline of user and system actions for transparency
+
+11. **Internal Messaging**
+    - In-platform communication between Client, Support, Admin and Moderator roles
+
+12. **Feature Flags**
+    - Runtime feature rollout through flags such as `betaBilling` and `newDashboard`
+
+13. **Health Monitoring**
+    - Service health tracking for API, databases, microservices and queues
+
+14. **Telemetry & Analytics**
+    - Captures active users, API traffic, errors, emitted events and delivered notifications
+
+15. **Security Center**
+    - Security alerts, login visibility and account protection context
+
+16. **Event Bus**
+    - Loose coupling between microservices through topic subscriptions like `payment.completed`
+
+17. **File Transfer Service**
+    - Secure records for attachments, documents, logs and backups with scanning, encryption and versioning metadata
+
+**CLI exposure:**
+- `ticket-pipeline platform snapshot`
+- `ticket-pipeline platform demo --user-id user-001`
+- `ticket-pipeline platform --seed-demo-user user-001 modules`
+- `ticket-pipeline platform --seed-demo-user user-001 events --limit 50`
+- `ticket-pipeline platform --seed-demo-user user-001 notifications --user-id user-001`
+- `ticket-pipeline platform --seed-demo-user user-001 audit --actor-id admin-001`
+- `ticket-pipeline platform --seed-demo-user user-001 access --user-id user-001`
+- `ticket-pipeline platform --seed-demo-user user-001 presence --user-id user-001`
+- `ticket-pipeline platform --seed-demo-user user-001 devices --user-id user-001`
+- `ticket-pipeline platform --seed-demo-user user-001 sessions --user-id user-001`
+- `ticket-pipeline platform routes`
+- `ticket-pipeline platform cache`
+- `ticket-pipeline platform messages --user-id user-001`
+- `ticket-pipeline platform flags`
+- `ticket-pipeline platform services`
+- `ticket-pipeline platform security --user-id user-001`
+- `ticket-pipeline platform subscriptions`
+- `ticket-pipeline platform files --owner-id user-001`
+
+**Snapshot output includes:**
+- module catalog with examples and benefits
+- role definitions
+- feature flags
+- event subscriptions
+- gateway routes
+- service health
+- telemetry counters
+
+**Write operations exposed through CLI:**
+- `assign-role` and `grant` for access model changes
+- `notify` for direct notification fan-out
+- `put-cache` for distributed cache updates
+- `send-message` for internal messaging
+- `set-flag` for runtime rollout control
+- `update-service` for health simulation and monitoring updates
+- `alert` for security center events
+- `record-file` for file transfer records
+
+**Runtime note:**
+- Current hub platform state is in-memory, so CLI mutations affect the current process/runtime model and are a ready foundation for adding durable storage later.
+
+---
+
 ### 3. CI/CD INTEGRATION
 
 #### Workflows (9 total):

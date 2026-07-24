@@ -9,6 +9,13 @@
   <component name="ChangeListManager">
     <list default="true" id="beb81f9f-ba89-4eb4-8215-003b22b1bbd1" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PROJECT_SUMMARY.md" beforeDir="false" afterPath="$PROJECT_DIR$/PROJECT_SUMMARY.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/config.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/hub_manager.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/hub_manager.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/models.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/models.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pipeline.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/pipeline.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -58,7 +65,7 @@
     "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
     "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
     "org.rust.hideToolchainNotifications": "true",
-    "settings.editor.selected.configurable": "language.rust.cargo.check",
+    "settings.editor.selected.configurable": "CodeStatsConfigurable",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -88,7 +95,7 @@
       <workItem from="1784215786050" duration="1823000" />
       <workItem from="1784217739083" duration="65000" />
       <workItem from="1784366927964" duration="46000" />
-      <workItem from="1784448234458" duration="2892000" />
+      <workItem from="1784448234458" duration="4164000" />
     </task>
     <servers />
   </component>
@@ -101,6 +108,23 @@
         <watch expression="__exception__" />
       </configuration>
     </watches-manager>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+  <component name="com.gk646.codestats.settings.Save">
+    <option name="genericTimePoints">
+      <list>
+        <TimePoint>
+          <option name="timestamp" value="1784454649960" />
+          <option name="linesCode" value="6994" />
+          <option name="totalLines" value="9376" />
+          <option name="info" value="19 lip 2026" />
+        </TimePoint>
+      </list>
+    </option>
+    <option name="separateTabsTypes" value="java;cpp;c;hpp;h;rs;css;html;js;php;py;cs;go;rb;swift;ts;kt;sql;pl;lua;groovy;asp;aspx;yml;json;scss;less;sass;sh;bat;ps1;md;f;r;m;asm;ada;scala;dart;jsx;julia" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/RyzeHub$main.coverage" NAME="main Coverage Results" MODIFIED="1783541581828" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

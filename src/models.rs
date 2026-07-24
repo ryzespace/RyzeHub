@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::hub_platform::HubHealthStatus;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TicketType {
@@ -238,6 +240,8 @@ pub struct HealthStatus {
     pub source: ServiceHealth,
     pub destination: ServiceHealth,
     pub pipeline: PipelineHealth,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hub: Option<HubHealthStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

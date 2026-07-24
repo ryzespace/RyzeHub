@@ -5,6 +5,7 @@ use anyhow::Result;
 use tracing::{error, info, warn};
 
 use crate::config::PipelineConfig;
+use crate::hub_platform::{ClientPlatform, HubPlatform, NotificationChannel, PresenceStatus};
 use crate::destination_client::HelpCenterClient;
 use crate::metrics::{self, PipelineMetrics};
 use crate::models::{HealthStatus, PipelineHealth, ServiceHealth, Ticket, TicketStatus, TransferResult};
@@ -18,6 +19,7 @@ pub struct TicketPipeline {
     destination: HelpCenterClient,
     audit: AuditLogger,
     encryption: Option<EncryptionManager>,
+    hub: HubPlatform,
 }
 
 impl TicketPipeline {
@@ -31,6 +33,7 @@ impl TicketPipeline {
         } else {
             None
         };
+        let hub = HubPlatform::new(config.hub.clone());
 
         Ok(Self {
             config,
@@ -38,6 +41,7 @@ impl TicketPipeline {
             destination,
             audit,
             encryption,
+            hub,
         })
     }
 
@@ -56,6 +60,7 @@ impl TicketPipeline {
             .source
             .fetch_all_pages(Some(statuses_to_fetch))
             .await?;
+        self.hub.update_service_health("RyzeSpace.Client", true, 0);
         metrics.fetched_count = tickets.len();
         metrics::inc_fetched(tickets.len());
 
@@ -129,6 +134,8 @@ impl TicketPipeline {
         let transfer_results = self.transfer_tickets(&tickets_to_send).await;
         let transfer_duration = transfer_start.elapsed();
         metrics::set_transfer_duration(transfer_duration.as_millis() as u64);
+        self.hub
+            .update_service_health("RyzeSpace.HelpCenter", true, transfer_duration.as_millis() as u64);
 
         for result in &transfer_results {
             if result.success {
@@ -146,11 +153,56 @@ impl TicketPipeline {
                         result.helpcenter_ticket_id.as_deref().unwrap_or(""),
                     )
                     .await;
+
+                if let Some(ticket) = tickets_to_send
+                    .iter()
+                    .find(|ticket| ticket.ticket_id == result.ticket_id)
+                {
+                    let user_id = if ticket.client_id.is_empty() {
+                        "unknown-user"
+                    } else {
+                        ticket.client_id.as_str()
+                    };
+
+                    self.hub.update_presence(
+                        user_id,
+                        PresenceStatus::Online,
+                        Some(format!("ticket-{}", ticket.ticket_id)),
+                    );
+                    self.hub.record_support_status_update(
+                        user_id,
+                        &ticket.ticket_id,
+                        "transferred",
+                        vec![
+                            NotificationChannel::MobilePush,
+                            NotificationChannel::Desktop,
+                            NotificationChannel::Email,
+                        ],
+                    );
+                    self.hub.record_activity(
+                        user_id,
+                        format!("Przeniesiono zgłoszenie {} do HelpCenter", ticket.ticket_id),
+                        serde_json::json!({
+                            "ticket_id": ticket.ticket_id,
+                            "helpcenter_ticket_id": result.helpcenter_ticket_id,
+                        }),
+                    );
+                }
             } else {
                 metrics.failed_count += 1;
                 metrics::inc_failed(1);
                 if let Some(err) = &result.error_message {
                     metrics.errors.push(format!("{}: {}", result.ticket_id, err));
+                    self.hub.update_service_health(
+                        "RyzeSpace.HelpCenter",
+                        false,
+                        transfer_duration.as_millis() as u64,
+                    );
+                    self.hub.record_security_warning(
+                        None,
+                        format!("Błąd transferu zgłoszenia {}: {}", result.ticket_id, err).as_str(),
+                        vec![NotificationChannel::SlackWebhook, NotificationChannel::DiscordWebhook],
+                    );
                 }
             }
         }
@@ -245,6 +297,13 @@ impl TicketPipeline {
     pub async fn health_check(&self) -> Result<HealthStatus> {
         let (source_healthy, source_latency) = self.source.health_check().await.unwrap_or((false, Default::default()));
         let (dest_healthy, dest_latency) = self.destination.health_check().await.unwrap_or((false, Default::default()));
+        self.hub
+            .update_service_health("RyzeSpace.Client", source_healthy, source_latency.as_millis() as u64);
+        self.hub.update_service_health(
+            "RyzeSpace.HelpCenter",
+            dest_healthy,
+            dest_latency.as_millis() as u64,
+        );
 
         let overall_status = if source_healthy && dest_healthy {
             "healthy"
@@ -275,6 +334,30 @@ impl TicketPipeline {
                 tickets_processed: 0,
                 error_rate: 0.0,
             },
+            hub: Some(self.hub.health_status()),
         })
+    }
+
+    pub fn hub_snapshot(&self) -> crate::hub_platform::HubPlatformSnapshot {
+        self.hub.snapshot()
+    }
+
+    pub fn hub_handle(&self) -> HubPlatform {
+        self.hub.clone()
+    }
+
+    pub fn seed_hub_demo(&self, user_id: &str) -> crate::hub_platform::HubPlatformSnapshot {
+        let device_id = self
+            .hub
+            .register_device(user_id, "RyzeHub Control Center", ClientPlatform::Desktop, true);
+        let _session_id = self.hub.create_session(
+            user_id,
+            &device_id,
+            ClientPlatform::Desktop,
+            "198.51.100.10",
+        );
+        self.hub
+            .update_presence(user_id, PresenceStatus::Online, Some(device_id));
+        self.hub.seed_demo_data(user_id)
     }
 }

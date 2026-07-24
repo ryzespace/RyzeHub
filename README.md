@@ -41,6 +41,17 @@
 - **Deduplication** — preventing duplicates
 - **Validation** — data checking before transfer
 
+### Hub Platform Layer (NEW SYSTEM!)
+- **Real Time Event System** — realtime events for support status, payments, server activation, security warnings and messaging
+- **Notification Center** — one notification hub for mobile push, desktop, email, SMS, Discord and Slack
+- **Audit Log Engine** — tracks logins, settings changes, admin operations, financial actions and permission changes
+- **Permission & Role Hub** — business roles plus granular permissions like `server:create` and `billing:manage`
+- **Presence + Device + Session Management** — online state, active devices, trusted devices and centralized sessions
+- **API Gateway + Distributed Cache** — unified entrypoint, rate limiting, auth, monitoring and Redis-style caching
+- **Activity Feed + Internal Messaging** — user timeline and communication inside the platform
+- **Feature Flags + Health Monitoring + Telemetry** — controlled rollouts, service health and product analytics
+- **Security Center + Event Bus + File Transfer Service** — security dashboard, loose microservice coupling and secure file flows
+
 ---
 
 ## Project Structure
@@ -118,6 +129,12 @@ cargo run
 # Metrics
 ./target/release/ticket-pipeline metrics
 
+# Hub platform snapshot
+./target/release/ticket-pipeline platform snapshot
+
+# Hub platform demo data
+./target/release/ticket-pipeline platform demo --user-id user-001
+
 # Validate config
 ./target/release/ticket-pipeline validate
 
@@ -150,6 +167,101 @@ cargo run
 ./target/release/ticket-pipeline errors anomalies
 ./target/release/ticket-pipeline errors test-patterns
 ```
+
+### Hub Platform Modules
+
+`src/hub_platform.rs` models the shared RyzeHub platform layer and exposes the module catalog through `HubPlatform::module_catalog()` and `HubPlatform::enabled_modules()`.
+
+The current platform catalog contains 17 modules:
+
+1. `real_time_event_system`
+2. `notification_center`
+3. `audit_log_engine`
+4. `permission_role_hub`
+5. `presence_system`
+6. `device_management`
+7. `session_manager`
+8. `api_gateway`
+9. `distributed_cache`
+10. `activity_feed`
+11. `internal_messaging`
+12. `feature_flags`
+13. `health_monitoring`
+14. `telemetry_analytics`
+15. `security_center`
+16. `event_bus`
+17. `file_transfer_service`
+
+The `platform snapshot` command returns:
+- module catalog with examples and business benefits
+- default roles and permissions
+- feature flags
+- event subscriptions
+- gateway routes
+- monitored services
+- telemetry counters and health status
+
+### Hub Platform CLI
+
+All platform commands support optional demo seeding:
+
+```bash
+ticket-pipeline platform --seed-demo-user user-001 <subcommand>
+```
+
+Available subcommands:
+
+```bash
+# Core views
+ticket-pipeline platform snapshot
+ticket-pipeline platform demo --user-id user-001
+ticket-pipeline platform modules
+ticket-pipeline platform health
+
+# Eventing and notifications
+ticket-pipeline platform events --limit 50
+ticket-pipeline platform endpoints
+ticket-pipeline platform notifications --user-id user-001 --limit 20
+ticket-pipeline platform notify --user-id user-001 --title "Alert" --message "New login" --channels "email,sms" --priority high
+
+# Audit, access and identity
+ticket-pipeline platform audit --actor-id admin-001 --limit 50
+ticket-pipeline platform roles
+ticket-pipeline platform access --user-id user-001
+ticket-pipeline platform assign-role --user-id user-001 --role Support
+ticket-pipeline platform grant --user-id user-001 --permission billing:manage
+ticket-pipeline platform presence --user-id user-001
+ticket-pipeline platform devices --user-id user-001
+ticket-pipeline platform sessions --user-id user-001
+
+# Gateway, cache and activity
+ticket-pipeline platform routes
+ticket-pipeline platform cache
+ticket-pipeline platform cache --key session:user-001
+ticket-pipeline platform put-cache --key dashboard:user-001 --value '{"widgets":["billing","servers"]}'
+ticket-pipeline platform activity --user-id user-001 --limit 20
+
+# Messaging and rollout
+ticket-pipeline platform messages --user-id user-001 --limit 20
+ticket-pipeline platform send-message --from-user user-001 --to-user support-001 --body "Potrzebuję pomocy"
+ticket-pipeline platform flags
+ticket-pipeline platform set-flag --key betaBilling --enabled true --description "Nowy billing"
+
+# Monitoring and security
+ticket-pipeline platform services
+ticket-pipeline platform update-service --service redis-cache --healthy true --latency-ms 5
+ticket-pipeline platform security --user-id user-001 --limit 20
+ticket-pipeline platform alert --user-id user-001 --description "Logowanie z nowego urządzenia" --channels "email,sms"
+ticket-pipeline platform subscriptions
+
+# File transfer
+ticket-pipeline platform files --owner-id user-001 --limit 20
+ticket-pipeline platform record-file --owner-id user-001 --file-name support-log.zip --scanned true --encrypted true --versioned true
+```
+
+Note:
+- `HubPlatform` currently works as an in-memory platform runtime.
+- CLI write operations update the current process state immediately, but are not persisted between separate binary runs unless a durable backend is added later.
 
 ### Docker
 
@@ -681,4 +793,3 @@ spec:
 ## License
 
 MIT
-

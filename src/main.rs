@@ -12,11 +12,14 @@ mod docker_manager;
 mod github_manager;
 mod hub_catalog;
 mod hub_manager;
+mod hub_platform;
 mod crypto;
 mod error_detection;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use serde::Serialize;
+use serde_json::{json, Value};
 use tracing::{info, error};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -115,6 +118,12 @@ enum Commands {
         #[command(subcommand)]
         action: ErrorCommands,
     },
+    Platform {
+        #[arg(long)]
+        seed_demo_user: Option<String>,
+        #[command(subcommand)]
+        action: PlatformCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -146,6 +155,159 @@ enum ErrorCommands {
     Stats,
     Anomalies,
     TestPatterns,
+}
+
+#[derive(Subcommand)]
+enum PlatformCommands {
+    Snapshot,
+    Demo {
+        #[arg(short, long, default_value = "user-001")]
+        user_id: String,
+    },
+    Modules,
+    Events {
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    Endpoints,
+    Notifications {
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    Notify {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        message: String,
+        #[arg(long, default_value = "desktop")]
+        channels: String,
+        #[arg(long, default_value = "medium")]
+        priority: String,
+        #[arg(long)]
+        metadata: Option<String>,
+    },
+    Audit {
+        #[arg(long)]
+        actor_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    Roles,
+    Access {
+        #[arg(long)]
+        user_id: String,
+    },
+    AssignRole {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long)]
+        role: String,
+    },
+    Grant {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long)]
+        permission: String,
+    },
+    Presence {
+        #[arg(long)]
+        user_id: Option<String>,
+    },
+    Devices {
+        #[arg(long)]
+        user_id: Option<String>,
+    },
+    Sessions {
+        #[arg(long)]
+        user_id: Option<String>,
+    },
+    Routes,
+    Cache {
+        #[arg(long)]
+        key: Option<String>,
+    },
+    PutCache {
+        #[arg(long)]
+        key: String,
+        #[arg(long)]
+        value: String,
+    },
+    Activity {
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    Messages {
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    SendMessage {
+        #[arg(long)]
+        from_user: String,
+        #[arg(long)]
+        to_user: String,
+        #[arg(long)]
+        body: String,
+    },
+    Flags,
+    SetFlag {
+        #[arg(long)]
+        key: String,
+        #[arg(long)]
+        enabled: bool,
+        #[arg(long)]
+        description: String,
+    },
+    Services,
+    UpdateService {
+        #[arg(long)]
+        service: String,
+        #[arg(long)]
+        healthy: bool,
+        #[arg(long, default_value_t = 0)]
+        latency_ms: u64,
+    },
+    Security {
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    Alert {
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(long)]
+        description: String,
+        #[arg(long, default_value = "email,sms")]
+        channels: String,
+    },
+    Subscriptions,
+    Files {
+        #[arg(long)]
+        owner_id: Option<String>,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    RecordFile {
+        #[arg(long)]
+        owner_id: String,
+        #[arg(long)]
+        file_name: String,
+        #[arg(long, default_value_t = true)]
+        scanned: bool,
+        #[arg(long, default_value_t = true)]
+        encrypted: bool,
+        #[arg(long, default_value_t = true)]
+        versioned: bool,
+    },
+    Health,
 }
 
 #[tokio::main]
@@ -187,6 +349,10 @@ async fn main() -> Result<()> {
                 info!("  Auto-categorize: {}", config.auto_categorize);
                 info!("  Auto-priority: {}", config.auto_priority);
                 info!("  Deduplicate: {}", config.deduplicate);
+                info!(
+                    "  Hub modules: {}",
+                    hub_platform::HubPlatform::enabled_modules().join(", ")
+                );
                 return Ok(());
             }
             Commands::Hub { org, token, dir, dockerize } => {
@@ -450,6 +616,213 @@ async fn main() -> Result<()> {
                 }
                 return Ok(());
             }
+            Commands::Platform { seed_demo_user, action } => {
+                let config = PipelineConfig::from_env()?;
+                let pipeline = TicketPipeline::new(config).await?;
+
+                match action {
+                    PlatformCommands::Snapshot => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.snapshot())?;
+                    }
+                    PlatformCommands::Demo { user_id } => {
+                        let snapshot = pipeline.seed_hub_demo(user_id);
+                        print_json(&snapshot)?;
+                    }
+                    PlatformCommands::Modules => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_module_catalog())?;
+                    }
+                    PlatformCommands::Events { limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_events(*limit))?;
+                    }
+                    PlatformCommands::Endpoints => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_notification_endpoints())?;
+                    }
+                    PlatformCommands::Notifications { user_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_notifications(user_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::Notify {
+                        user_id,
+                        title,
+                        message,
+                        channels,
+                        priority,
+                        metadata,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        let record = hub.send_notification(
+                            user_id,
+                            title,
+                            message,
+                            parse_channels(channels)?,
+                            parse_notification_priority(priority)?,
+                            parse_optional_json(metadata.as_ref())?,
+                        );
+                        print_json(&record)?;
+                    }
+                    PlatformCommands::Audit { actor_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_audit_logs(actor_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::Roles => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_roles())?;
+                    }
+                    PlatformCommands::Access { user_id } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.access_profile(user_id))?;
+                    }
+                    PlatformCommands::AssignRole { user_id, role } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.assign_role(user_id, role);
+                        print_json(&hub.access_profile(user_id))?;
+                    }
+                    PlatformCommands::Grant { user_id, permission } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.grant_permission(user_id, permission);
+                        print_json(&hub.access_profile(user_id))?;
+                    }
+                    PlatformCommands::Presence { user_id } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_presence(user_id.as_deref()))?;
+                    }
+                    PlatformCommands::Devices { user_id } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_devices(user_id.as_deref()))?;
+                    }
+                    PlatformCommands::Sessions { user_id } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_sessions(user_id.as_deref()))?;
+                    }
+                    PlatformCommands::Routes => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_gateway_routes())?;
+                    }
+                    PlatformCommands::Cache { key } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        if let Some(key) = key {
+                            let entry = hub
+                                .list_cache_entries()
+                                .into_iter()
+                                .find(|entry| entry.key == *key);
+                            print_json(&entry)?;
+                        } else {
+                            print_json(&hub.list_cache_entries())?;
+                        }
+                    }
+                    PlatformCommands::PutCache { key, value } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.put_cache(key, parse_json_value(value)?);
+                        let entry = hub
+                            .list_cache_entries()
+                            .into_iter()
+                            .find(|entry| entry.key == *key);
+                        print_json(&entry)?;
+                    }
+                    PlatformCommands::Activity { user_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_activity_feed(user_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::Messages { user_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_messages(user_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::SendMessage {
+                        from_user,
+                        to_user,
+                        body,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.record_internal_message(from_user, to_user, body);
+                        print_json(&hub.list_messages(Some(to_user.as_str()), 1))?;
+                    }
+                    PlatformCommands::Flags => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_feature_flags())?;
+                    }
+                    PlatformCommands::SetFlag {
+                        key,
+                        enabled,
+                        description,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.set_feature_flag(key, *enabled, description);
+                        let flag = hub
+                            .list_feature_flags()
+                            .into_iter()
+                            .find(|flag| flag.key == *key);
+                        print_json(&flag)?;
+                    }
+                    PlatformCommands::Services => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_services())?;
+                    }
+                    PlatformCommands::UpdateService {
+                        service,
+                        healthy,
+                        latency_ms,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.update_service_health(service, *healthy, *latency_ms);
+                        let current = hub
+                            .list_services()
+                            .into_iter()
+                            .find(|item| item.name == *service);
+                        print_json(&current)?;
+                    }
+                    PlatformCommands::Security { user_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_security_alerts(user_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::Alert {
+                        user_id,
+                        description,
+                        channels,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.record_security_warning(
+                            user_id.as_deref(),
+                            description,
+                            parse_channels(channels)?,
+                        );
+                        print_json(&hub.list_security_alerts(user_id.as_deref(), 1))?;
+                    }
+                    PlatformCommands::Subscriptions => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_subscriptions())?;
+                    }
+                    PlatformCommands::Files { owner_id, limit } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.list_file_transfers(owner_id.as_deref(), *limit))?;
+                    }
+                    PlatformCommands::RecordFile {
+                        owner_id,
+                        file_name,
+                        scanned,
+                        encrypted,
+                        versioned,
+                    } => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        hub.record_file_transfer(
+                            owner_id,
+                            file_name,
+                            *scanned,
+                            *encrypted,
+                            *versioned,
+                        );
+                        print_json(&hub.list_file_transfers(Some(owner_id.as_str()), 1))?;
+                    }
+                    PlatformCommands::Health => {
+                        let hub = prepare_platform(&pipeline, seed_demo_user.as_ref());
+                        print_json(&hub.health_status())?;
+                    }
+                }
+                return Ok(());
+            }
         }
     }
 
@@ -497,4 +870,77 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn prepare_platform(
+    pipeline: &TicketPipeline,
+    seed_demo_user: Option<&String>,
+) -> hub_platform::HubPlatform {
+    if let Some(user_id) = seed_demo_user {
+        let _ = pipeline.seed_hub_demo(user_id);
+    }
+    pipeline.hub_handle()
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
+fn parse_channels(value: &str) -> Result<Vec<hub_platform::NotificationChannel>> {
+    let mut channels = Vec::new();
+
+    for raw in value.split(',') {
+        let normalized = raw.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            continue;
+        }
+
+        let channel = match normalized.as_str() {
+            "mobile" | "mobile_push" | "push" => hub_platform::NotificationChannel::MobilePush,
+            "desktop" | "desktop_notifications" => hub_platform::NotificationChannel::Desktop,
+            "email" => hub_platform::NotificationChannel::Email,
+            "sms" => hub_platform::NotificationChannel::Sms,
+            "discord" | "discord_webhook" | "discord_webhooks" => {
+                hub_platform::NotificationChannel::DiscordWebhook
+            }
+            "slack" | "slack_webhook" | "slack_webhooks" => {
+                hub_platform::NotificationChannel::SlackWebhook
+            }
+            _ => {
+                anyhow::bail!("Nieznany kanał powiadomień: {}", raw);
+            }
+        };
+
+        if !channels.contains(&channel) {
+            channels.push(channel);
+        }
+    }
+
+    if channels.is_empty() {
+        anyhow::bail!("Podaj przynajmniej jeden kanał powiadomień");
+    }
+
+    Ok(channels)
+}
+
+fn parse_notification_priority(value: &str) -> Result<hub_platform::NotificationPriority> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "low" => Ok(hub_platform::NotificationPriority::Low),
+        "medium" => Ok(hub_platform::NotificationPriority::Medium),
+        "high" => Ok(hub_platform::NotificationPriority::High),
+        "critical" => Ok(hub_platform::NotificationPriority::Critical),
+        _ => anyhow::bail!("Nieznany priorytet powiadomienia: {}", value),
+    }
+}
+
+fn parse_json_value(value: &str) -> Result<Value> {
+    serde_json::from_str(value).or_else(|_| Ok(json!(value)))
+}
+
+fn parse_optional_json(value: Option<&String>) -> Result<Value> {
+    match value {
+        Some(content) => parse_json_value(content),
+        None => Ok(json!({})),
+    }
 }

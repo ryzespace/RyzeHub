@@ -14,6 +14,7 @@ pub struct PipelineConfig {
     pub log_level: String,
     pub poll_interval: u64,
     pub security: SecurityConfig,
+    pub hub: HubPlatformConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -45,6 +46,17 @@ pub struct SecurityConfig {
     pub sensitive_fields_mask: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct HubPlatformConfig {
+    pub event_retention_seconds: u64,
+    pub cache_provider: String,
+    pub cache_ttl_seconds: u64,
+    pub gateway_base_path: String,
+    pub gateway_rate_limit: u32,
+    pub telemetry_enabled: bool,
+    pub notification_retention_seconds: u64,
+}
+
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
@@ -58,6 +70,7 @@ impl Default for PipelineConfig {
             log_level: "info".to_string(),
             poll_interval: 300,
             security: SecurityConfig::default(),
+            hub: HubPlatformConfig::default(),
         }
     }
 }
@@ -96,6 +109,20 @@ impl Default for SecurityConfig {
             audit_log_enabled: true,
             checksum_enabled: true,
             sensitive_fields_mask: true,
+        }
+    }
+}
+
+impl Default for HubPlatformConfig {
+    fn default() -> Self {
+        Self {
+            event_retention_seconds: 86_400,
+            cache_provider: "redis".to_string(),
+            cache_ttl_seconds: 3_600,
+            gateway_base_path: "/api".to_string(),
+            gateway_rate_limit: 120,
+            telemetry_enabled: true,
+            notification_retention_seconds: 604_800,
         }
     }
 }
@@ -154,6 +181,28 @@ impl PipelineConfig {
         }
         if let Ok(interval) = env::var("POLL_INTERVAL") {
             config.poll_interval = interval.parse().unwrap_or(300);
+        }
+
+        if let Ok(retention) = env::var("HUB_EVENT_RETENTION_SECONDS") {
+            config.hub.event_retention_seconds = retention.parse().unwrap_or(86_400);
+        }
+        if let Ok(provider) = env::var("HUB_CACHE_PROVIDER") {
+            config.hub.cache_provider = provider;
+        }
+        if let Ok(ttl) = env::var("HUB_CACHE_TTL_SECONDS") {
+            config.hub.cache_ttl_seconds = ttl.parse().unwrap_or(3_600);
+        }
+        if let Ok(path) = env::var("HUB_GATEWAY_BASE_PATH") {
+            config.hub.gateway_base_path = path;
+        }
+        if let Ok(limit) = env::var("HUB_GATEWAY_RATE_LIMIT") {
+            config.hub.gateway_rate_limit = limit.parse().unwrap_or(120);
+        }
+        if let Ok(enabled) = env::var("HUB_TELEMETRY_ENABLED") {
+            config.hub.telemetry_enabled = enabled.parse().unwrap_or(true);
+        }
+        if let Ok(retention) = env::var("HUB_NOTIFICATION_RETENTION_SECONDS") {
+            config.hub.notification_retention_seconds = retention.parse().unwrap_or(604_800);
         }
 
         Ok(config)

@@ -10,6 +10,7 @@ use crate::dependency_manager::DependencyManager;
 use crate::docker_manager::DockerManager;
 use crate::github_manager::{GitHubManager, GitHubManagerConfig};
 use crate::hub_catalog;
+use crate::hub_platform::HubPlatform;
 
 pub struct HubManager {
     github: GitHubManager,
@@ -72,6 +73,7 @@ impl HubManager {
             .filter(|repo_name| !cloned_repo_names.contains(repo_name))
             .collect();
         result.future_dependency_targets = hub_catalog::future_repository_names();
+        result.enabled_platform_modules = HubPlatform::enabled_modules();
 
         if !result.active_repositories.is_empty() {
             info!(
@@ -134,6 +136,10 @@ impl HubManager {
             "  Future targets: {}",
             result.future_dependency_targets.join(", ")
         );
+        info!(
+            "  Platform modules: {}",
+            result.enabled_platform_modules.join(", ")
+        );
         info!("═══════════════════════════════════════════════");
 
         Ok(result)
@@ -171,6 +177,7 @@ pub struct HubUpdateResult {
     pub active_repositories: Vec<String>,
     pub missing_active_repositories: Vec<String>,
     pub future_dependency_targets: Vec<String>,
+    pub enabled_platform_modules: Vec<String>,
     pub errors: Vec<String>,
 }
 
@@ -184,6 +191,7 @@ impl HubUpdateResult {
             active_repositories: Vec::new(),
             missing_active_repositories: Vec::new(),
             future_dependency_targets: Vec::new(),
+            enabled_platform_modules: Vec::new(),
             errors: Vec::new(),
         }
     }
