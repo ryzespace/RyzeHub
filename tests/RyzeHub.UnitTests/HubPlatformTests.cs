@@ -16,8 +16,8 @@ public sealed class HubPlatformTests
         var snapshot = CreatePlatform().Snapshot();
 
         snapshot.EnabledModules.Should().HaveCount(17);
-        snapshot.EnabledModules.Should().Contain(
-        [
+        snapshot.EnabledModules.Should().Contain(new[]
+        {
             "real_time_event_system",
             "notification_center",
             "audit_log_engine",
@@ -35,7 +35,7 @@ public sealed class HubPlatformTests
             "security_center",
             "event_bus",
             "file_transfer_service"
-        ]);
+        });
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class HubPlatformTests
 
         profile.Roles.Should().Contain("User");
         profile.DirectPermissions.Should().Contain("billing:manage");
-        profile.EffectivePermissions.Should().Contain(["server:create", "billing:manage"]);
+        profile.EffectivePermissions.Should().Contain(new[] { "server:create", "billing:manage" });
     }
 
     [Fact]

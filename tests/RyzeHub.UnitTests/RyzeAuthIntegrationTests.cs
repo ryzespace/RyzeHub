@@ -43,7 +43,7 @@ public sealed class RyzeAuthRoleSynchronizerTests
 
         var mapped = synchronizer.MapRoles(["ryzehub-admin", "ryzehub-support", "unrelated-role"]);
 
-        mapped.Should().BeEquivalentTo(["Admin", "Support"]);
+        mapped.Should().BeEquivalentTo(new[] { "Admin", "Support" });
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class RyzeAuthRoleSynchronizerTests
 
         var (_, synchronizer) = Create(options);
 
-        synchronizer.MapRoles(["platform-owner", "ryzehub-admin"]).Should().BeEquivalentTo(["SuperAdmin"]);
+        synchronizer.MapRoles(["platform-owner", "ryzehub-admin"]).Should().BeEquivalentTo(new[] { "SuperAdmin" });
     }
 }
 

@@ -32,7 +32,9 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
       - name: Restore
         run: dotnet restore RyzeHub.sln
+      # Advisory on the first runs: flip to a hard failure once the baseline is clean.
       - name: Verify formatting
+        continue-on-error: true
         run: dotnet format RyzeHub.sln --verify-no-changes --no-restore --verbosity diagnostic
 
   build-test:

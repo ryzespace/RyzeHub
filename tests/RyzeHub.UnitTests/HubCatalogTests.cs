@@ -43,8 +43,12 @@ public sealed class DependencyGraphTests
 
         var order = graph.TopologicalSort();
 
-        order.Should().NotBeNull().And.HaveCount(3);
-        order!.ToList().IndexOf("lib-a").Should().BeLessThan(order.ToList().IndexOf("lib-b"));
+        order.Should().NotBeNull();
+        order!.Should().HaveCount(3);
+
+        var ordered = order.ToList();
+        ordered.IndexOf("lib-a").Should().BeLessThan(ordered.IndexOf("lib-b"));
+        ordered.IndexOf("lib-b").Should().BeLessThan(ordered.IndexOf("app"));
     }
 
     [Fact]
@@ -64,7 +68,7 @@ public sealed class DependencyGraphTests
         graph.AddRepository("client", ["RyzeAuth"]);
         graph.AddRepository("helpcenter", ["RyzeAuth"]);
 
-        graph.GetDependents("RyzeAuth").Should().BeEquivalentTo(["client", "helpcenter"]);
+        graph.GetDependents("RyzeAuth").Should().BeEquivalentTo(new[] { "client", "helpcenter" });
     }
 }
 
@@ -90,7 +94,7 @@ public sealed class DependencyManagerTests
                 ["RyzeSpace.Client", "RyzeSpace.HelpCenter"]);
 
             manager.FindInternalDependencies(directory.FullName)
-                .Should().Contain(["RyzeSpace.Client", "RyzeSpace.HelpCenter"]);
+                .Should().Contain(new[] { "RyzeSpace.Client", "RyzeSpace.HelpCenter" });
         }
         finally
         {
