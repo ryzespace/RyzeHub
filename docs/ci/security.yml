@@ -19,6 +19,7 @@ concurrency:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
   dependency-audit:
@@ -113,7 +114,7 @@ jobs:
       - name: Ensure AES-GCM key sizes are 256-bit
         run: |
           set -euo pipefail
-          if grep -rn "requiredLength: 32" src/RyzeHub.Application/Security/CryptoEngine.cs > /dev/null; then
+          if grep -rn "requiredLength: 32" src --include='*.cs' > /dev/null; then
             echo "Crypto engine enforces 32-byte (256-bit) keys"
           else
             echo "::error::Crypto engine no longer enforces 256-bit keys"

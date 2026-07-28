@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Moq;
 using RyzeHub.Application;
 using RyzeHub.Application.Configuration;
-using RyzeHub.Application.Platform;
 using RyzeHub.Infrastructure.RyzeAuth;
 
 namespace RyzeHub.UnitTests;
@@ -12,9 +11,9 @@ namespace RyzeHub.UnitTests;
 /// </summary>
 public sealed class RyzeAuthRoleSynchronizerTests
 {
-    private static (HubPlatform Hub, RyzeAuthRoleSynchronizer Synchronizer) Create(RyzeAuthOptions? options = null)
+    private static (IHubPlatform Hub, RyzeAuthRoleSynchronizer Synchronizer) Create(RyzeAuthOptions? options = null)
     {
-        var hub = new HubPlatform(TestSupport.Options(new HubPlatformOptions()), TestSupport.Clock());
+        var hub = TestSupport.CreateHubPlatform();
         var synchronizer = new RyzeAuthRoleSynchronizer(
             hub,
             TestSupport.Logger<RyzeAuthRoleSynchronizer>(),

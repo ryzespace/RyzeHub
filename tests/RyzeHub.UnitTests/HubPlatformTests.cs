@@ -1,14 +1,12 @@
 using System.Text.Json.Nodes;
-using RyzeHub.Application.Configuration;
-using RyzeHub.Application.Platform;
+using RyzeHub.Application;
 using RyzeHub.Domain.Platform;
 
 namespace RyzeHub.UnitTests;
 
 public sealed class HubPlatformTests
 {
-    private static HubPlatform CreatePlatform() =>
-        new(TestSupport.Options(new HubPlatformOptions()), TestSupport.Clock());
+    private static IHubPlatform CreatePlatform() => TestSupport.CreateHubPlatform();
 
     [Fact]
     public void BootstrapContainsAllRequestedModules()

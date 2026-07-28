@@ -48,21 +48,36 @@ RyzeHub/
 ├── docker-compose.yml
 ├── src/
 │   ├── RyzeHub.Domain/             # tickets, platform records, diagnostics, error types
-│   ├── RyzeHub.Application/        # pipeline, transformer, crypto, hub platform, diagnostics
+│   ├── RyzeHub.Application/
+│   │   ├── Abstractions/           # one interface group per file
+│   │   ├── Configuration/          # options
+│   │   ├── Diagnostics/            # error detection, anomaly detection
+│   │   ├── Hub/                    # catalog, dependency graph, docker, github
+│   │   ├── Pipeline/               # orchestrator, transfer, outcome, health, metrics
+│   │   ├── Platform/Stores/        # one store per hub module
+│   │   ├── Security/               # crypto, signatures, keys, vault, audit
+│   │   └── Tickets/                # transformer, checksums
 │   ├── RyzeHub.Contracts/          # api_keys.proto (mirrors RyzeAuth)
-│   ├── RyzeHub.Infrastructure/     # HTTP clients, RyzeAuth client, DI wiring
-│   ├── RyzeHub.Api/                # ASP.NET Core minimal API + auth policies
-│   └── RyzeHub.Cli/                # `ryzehub` command line tool
+│   ├── RyzeHub.Infrastructure/
+│   │   ├── Clients/                # source + destination HTTP clients
+│   │   ├── DependencyInjection/    # focused registration extensions
+│   │   └── RyzeAuth/               # control-plane client, tokens, role sync
+│   ├── RyzeHub.Api/
+│   │   ├── Configuration/          # auth, observability setup
+│   │   ├── Endpoints/              # one file per route group
+│   │   ├── Middleware/             # correlation id, security headers, problem details
+│   │   └── Security/               # RyzeAuth API-key scheme
+│   └── RyzeHub.Cli/Commands/       # one handler per verb
 ├── tests/
 │   ├── RyzeHub.UnitTests/
 │   └── RyzeHub.IntegrationTests/   # WebApplicationFactory API tests
-└── .github/workflows/
-    ├── ci.yml                      # format, build, test, CLI smoke, Docker
-    ├── security.yml                # NuGet audit, CodeQL, crypto verification
-    ├── ryzeauth-integration.yml    # live RyzeAuth ecosystem + proto parity
-    ├── hub-manager.yml             # org scan, dependency graph, build order
-    └── release.yml                 # binaries, GHCR images, gated deploy
+└── docs/
+    ├── ARCHITECTURE.md             # layering and responsibility split
+    ├── RYZEAUTH-INTEGRATION.md     # control-plane contract and realm setup
+    └── ci/                         # workflows pending installation, see docs/ci/README.md
 ```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how responsibilities are split.
 
 ---
 

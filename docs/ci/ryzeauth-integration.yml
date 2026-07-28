@@ -131,27 +131,29 @@ jobs:
           docker compose -f .ryzeauth/docker-compose.yml logs
           exit 1
 
-      - name: Build RyzeHub
-        run: dotnet build RyzeHub.sln --configuration Release
+      - name: Publish RyzeHub API
+        run: dotnet publish src/RyzeHub.Api/RyzeHub.Api.csproj -c Release -o artifacts/api
 
       - name: Start RyzeHub API against RyzeAuth
-        env:
-          ENCRYPTION_KEY_FILE: /tmp/ryzehub-key
         run: |
           set -euo pipefail
-          openssl rand -base64 32 > /tmp/ryzehub-key
+          KEY="$(openssl rand -base64 32)"
 
-          ASPNETCORE_ENVIRONMENT=Development \
-          ASPNETCORE_URLS=http://+:8082 \
-          RyzeAuth__Authority=http://localhost:8080/realms/ryzespace \
-          RyzeAuth__ApiBaseUrl=http://localhost:8081 \
-          RyzeAuth__RequireHttpsMetadata=false \
-          RyzeAuth__ApiKeyIntrospectionEnabled=true \
-          RyzeAuth__ForwardAuditEvents=true \
-          Security__EncryptionKey="$(cat /tmp/ryzehub-key)" \
-          Security__SigningKey="$(cat /tmp/ryzehub-key)" \
-          nohup dotnet run --project src/RyzeHub.Api --configuration Release --no-build \
-            > /tmp/ryzehub-api.log 2>&1 &
+          # gRPC introspection against RyzeAuth speaks plaintext HTTP/2 in CI.
+          export ASPNETCORE_ENVIRONMENT=Development
+          export ASPNETCORE_URLS=http://+:8082
+          export RyzeAuth__Authority=http://localhost:8080/realms/ryzespace
+          export RyzeAuth__ApiBaseUrl=http://localhost:8081
+          export RyzeAuth__RequireHttpsMetadata=false
+          export RyzeAuth__ApiKeyIntrospectionEnabled=true
+          export RyzeAuth__ForwardAuditEvents=true
+          export Security__EncryptionKey="$KEY"
+          export Security__SigningKey="$KEY"
+          export GRPC_ENABLE_FORK_SUPPORT=1
+          export DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTP2UNENCRYPTEDSUPPORT=1
+
+          nohup dotnet artifacts/api/RyzeHub.Api.dll > /tmp/ryzehub-api.log 2>&1 &
+          echo $! > /tmp/ryzehub-api.pid
 
           for _ in $(seq 1 40); do
             if curl --fail --silent http://localhost:8082/health/live > /dev/null; then
@@ -211,6 +213,13 @@ jobs:
         if: always()
         working-directory: .ryzeauth
         run: docker compose logs --no-color --tail 200
+
+      - name: Stop RyzeHub API
+        if: always()
+        run: |
+          if [ -f /tmp/ryzehub-api.pid ]; then
+            kill "$(cat /tmp/ryzehub-api.pid)" 2>/dev/null || true
+          fi
 
       - name: Tear down
         if: always()

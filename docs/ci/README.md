@@ -10,25 +10,12 @@ hold the GitHub App `workflows` permission, so it cannot create or update files 
 From a checkout of this branch, with a token that can write workflows:
 
 ```bash
-git checkout arena/019fa9ed-ryzehub
+git checkout arena/019fa9ed-ryzehub-v2
 
-# Remove the obsolete Rust workflows
-git rm -r --ignore-unmatch \
-  .github/workflows/ci-pipeline.yml \
-  .github/workflows/dependency-analysis.yml \
-  .github/workflows/deploy-pipeline.yml \
-  .github/workflows/docker-build.yml \
-  .github/workflows/error-detection.yml \
-  .github/workflows/hub-auto-update.yml \
-  .github/workflows/hub-manager.yml \
-  .github/workflows/security-encryption.yml
-
-# Install the new ones
 cp docs/ci/*.yml .github/workflows/
-rm .github/workflows/README.md 2>/dev/null || true
 
 git add .github/workflows
-git commit -m "ci: rebuild workflows for the .NET solution"
+git commit -m "ci: install rebuilt workflows"
 git push
 ```
 
@@ -38,7 +25,7 @@ Once installed, this directory can be deleted.
 
 The previous workflows had several problems that the rewrite fixes.
 
-| Problem in the Rust workflows | Fix |
+| Problem | Fix |
 | --- | --- |
 | Checkout done with a hand-rolled `git clone` + `mv * ../` shell block, which silently loses dotfiles and breaks on any nested path | `actions/checkout@v4` |
 | `"Cargo caching disabled due to organization policy"` — a no-op step, so every job recompiled from scratch | `actions/setup-dotnet@v4` with NuGet caching enabled |
@@ -48,18 +35,23 @@ The previous workflows had several problems that the rewrite fixes.
 | No `concurrency:` — superseded pushes kept running | Concurrency groups with `cancel-in-progress` |
 | No `timeout-minutes` — a hung job could burn six hours | Explicit timeouts on every job |
 | Toolchain installed via `curl \| sh` and re-sourced in each step | Official setup action |
+| `setup-dotnet` cache keyed on `**/packages.lock.json`, which this repo does not commit — the step fails outright | `actions/cache@v4` keyed on `*.csproj` + `Directory.Packages.props` |
+| `HEALTHCHECK` ran `curl` in an image without curl, and `dotnet App.dll --healthcheck` would have started a second server | curl installed in the API image; the CLI image has no healthcheck (it is a task container) |
+| `dotnet run --no-build` after a plain `dotnet build` cannot find the published output | `dotnet publish` then run the resulting `.dll` directly |
+| Backgrounded API process was never stopped, so teardown could hang | PID captured and killed in an `if: always()` step |
+| `jq index(...)` returns `0` for a first-position match, which is falsy in `jq -e` | Compare with `!= null` |
 
 ## The workflows
 
 ### `ci.yml` — push, PR
 
-- `format` — `dotnet format --verify-no-changes`
-- `build-test` — Release build, unit + integration tests, TRX and coverage artifacts
-- `cli-smoke` — publishes the CLI and exercises it end to end: encrypt/decrypt round trip,
-  sign/verify round trip, vault store/list/integrity, a platform snapshot asserting all 17 modules,
-  and an error-detection assertion
-- `docker` — builds both images with GHA layer caching, starts the API container and probes
-  `/health/live` and `/api/platform/modules`
+- `build-test` — Release build, `dotnet format` check (advisory), unit + integration tests, TRX artifacts
+- `cli-smoke` — publishes the CLI and exercises it end to end: help/exit codes, encrypt/decrypt
+  round trip, sign/verify including a negative tamper case, vault store/list/integrity plus a
+  plaintext-leak check, a platform snapshot asserting all 17 modules, error-detection patterns,
+  and a dependency scan asserting RyzeAuth is found
+- `docker` — builds both images with GHA layer caching, starts the API container, probes
+  `/health/live` and `/api/platform/modules`, and asserts a protected route returns 401
 
 ### `security.yml` — push, PR, weekly
 
