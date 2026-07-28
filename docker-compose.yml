@@ -1,0 +1,66 @@
+# Development-only stack: RyzeHub API + CLI wired to a RyzeAuth control plane.
+# Point RYZEAUTH_* at your running ryzespace/RyzeAuth deployment, or start it
+# from its own docker-compose.yml on the shared `ryzespace` network.
+name: ryzehub
+
+services:
+  ryzehub-api:
+    build:
+      context: .
+      dockerfile: src/RyzeHub.Api/Dockerfile
+    container_name: ryzehub-api
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8082
+      RyzeAuth__Authority: ${RYZEAUTH_AUTHORITY:-http://keycloak:8080/realms/ryzespace}
+      RyzeAuth__ValidAudience: ${RYZEAUTH_AUDIENCE:-ryzehub-api}
+      RyzeAuth__ApiBaseUrl: ${RYZEAUTH_API_BASE_URL:-http://ryzeauth-api:8081}
+      RyzeAuth__ClientId: ${RYZEAUTH_CLIENT_ID:-ryzehub-service}
+      RyzeAuth__ClientSecret: ${RYZEAUTH_CLIENT_SECRET:-}
+      RyzeAuth__RequiredApiKeyScope: ${RYZEAUTH_REQUIRED_SCOPE:-hub:tickets:transfer}
+      RyzeAuth__RequireHttpsMetadata: "false"
+      Security__EncryptionKey: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      Security__SigningKey: ${SIGNING_KEY:-${ENCRYPTION_KEY}}
+      Source__BaseUrl: ${CLIENT_DASHBOARD_URL:-https://client-dashboard.example.com/api/v1}
+      Source__ApiKey: ${CLIENT_DASHBOARD_API_KEY:-}
+      Destination__BaseUrl: ${HELPCENTER_URL:-https://helpcenter.example.com/api/v1}
+      Destination__ApiKey: ${HELPCENTER_API_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - ryzespace
+
+  ryzehub-cli:
+    build:
+      context: .
+      dockerfile: src/RyzeHub.Cli/Dockerfile
+    container_name: ryzehub-cli
+    profiles: ["tools"]
+    environment:
+      RYZEAUTH_AUTHORITY: ${RYZEAUTH_AUTHORITY:-http://keycloak:8080/realms/ryzespace}
+      RYZEAUTH_API_BASE_URL: ${RYZEAUTH_API_BASE_URL:-http://ryzeauth-api:8081}
+      RYZEAUTH_CLIENT_ID: ${RYZEAUTH_CLIENT_ID:-ryzehub-service}
+      RYZEAUTH_CLIENT_SECRET: ${RYZEAUTH_CLIENT_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      SIGNING_KEY: ${SIGNING_KEY:-${ENCRYPTION_KEY}}
+      CLIENT_DASHBOARD_URL: ${CLIENT_DASHBOARD_URL:-https://client-dashboard.example.com/api/v1}
+      CLIENT_DASHBOARD_API_KEY: ${CLIENT_DASHBOARD_API_KEY:-}
+      HELPCENTER_URL: ${HELPCENTER_URL:-https://helpcenter.example.com/api/v1}
+      HELPCENTER_API_KEY: ${HELPCENTER_API_KEY:-}
+      HUB_ORG_NAME: ${HUB_ORG_NAME:-ryzespace}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    command: ["--help"]
+    networks:
+      - ryzespace
+
+networks:
+  ryzespace:
+    name: ryzespace
+    external: false

@@ -1,795 +1,294 @@
-# Ticket Pipeline (Rust)
+# RyzeHub
 
-**High-performance ticket transfer pipeline between client dashboard and helpcenter.**
+**Ticket transfer pipeline and platform layer for RyzeSpace, built on .NET 10.**
 
----
+RyzeHub moves support tickets from the client dashboard into the help center, and exposes a
+platform layer (realtime events, notifications, audit, RBAC, presence, sessions, gateway, cache,
+telemetry, security) on top of it.
 
-## New Features (vs Python)
-
-### Performance
-- **Async/await** — concurrent I/O operations
-- **Connection pooling** — HTTP connection reuse
-- **Zero-cost abstractions** — no runtime overhead
-- **Native code compilation** — 10-100x faster than Python
-
-### Security (NEW SYSTEM!)
-- **Multi-layer encryption** — AES-256-GCM with key rotation
-- **Hierarchical keys** — master key → derived keys → session keys
-- **Digital signatures** — HMAC-SHA256 for data integrity
-- **Secure Vault** — encrypted key storage with ACL
-- **Key derivation** — HKDF/PBKDF2 for secure key derivation
-- **Key rotation** — automatic key rotation every 30 days
-- **Audit trail** — full cryptographic operation log
-
-### Error Detection (NEW SYSTEM!)
-- **Pattern recognition** — 5+ built-in error patterns
-- **Anomaly detection** — Z-score, IQR, Moving Average, Exponential Smoothing
-- **Error correlation** — error correlation in time window
-- **Predictive analysis** — prediction of potential issues
-- **Real-time monitoring** — real-time metrics and alerts
-- **Custom patterns** — ability to add custom patterns
-
-### Monitoring
-- **Prometheus metrics** — metrics export
-- **Health checks** — service status checking
-- **Structured logging (JSON)** — logs in JSON format
-- **Performance metrics** — transfer time, throughput
-
-### Reliability
-- **Exponential backoff retry** — intelligent retry
-- **Pagination** — handling large datasets
-- **Deduplication** — preventing duplicates
-- **Validation** — data checking before transfer
-
-### Hub Platform Layer (NEW SYSTEM!)
-- **Real Time Event System** — realtime events for support status, payments, server activation, security warnings and messaging
-- **Notification Center** — one notification hub for mobile push, desktop, email, SMS, Discord and Slack
-- **Audit Log Engine** — tracks logins, settings changes, admin operations, financial actions and permission changes
-- **Permission & Role Hub** — business roles plus granular permissions like `server:create` and `billing:manage`
-- **Presence + Device + Session Management** — online state, active devices, trusted devices and centralized sessions
-- **API Gateway + Distributed Cache** — unified entrypoint, rate limiting, auth, monitoring and Redis-style caching
-- **Activity Feed + Internal Messaging** — user timeline and communication inside the platform
-- **Feature Flags + Health Monitoring + Telemetry** — controlled rollouts, service health and product analytics
-- **Security Center + Event Bus + File Transfer Service** — security dashboard, loose microservice coupling and secure file flows
+RyzeHub does **not** implement its own login engine. Identity, tokens, API keys and the audit
+authority live in [`ryzespace/RyzeAuth`](https://github.com/ryzespace/RyzeAuth) — RyzeHub is a
+resource server in front of it.
 
 ---
 
-## Project Structure
+## Architecture
 
+```text
+Browser / mobile / desktop / service
+          | Authorization Code + PKCE / client_credentials
+          v
+ Keycloak (ryzespace realm) <---- managed by ---- RyzeAuth
+          | JWT (EdDSA / ES256 / RS256, JWKS + kid)
+          v
+   RyzeHub API (.NET 10) ---- gRPC ApiKeyIntrospection ----> RyzeAuth API
+          |                ---- REST token introspection --->
+          |                ---- REST audit forwarding ------>
+          |
+          +-- Ticket pipeline: Client Dashboard -> HelpCenter
+          +-- Hub platform layer (17 modules, in-memory runtime)
+          +-- Crypto: AES-256-GCM, HMAC-SHA256, hierarchical keys, secure vault
+          +-- Error detection: pattern matching, Z-score / IQR / MA / exp. smoothing
+          +-- OpenTelemetry: OTLP traces, Prometheus metrics
 ```
-ticket-pipeline-rust/
-├── Cargo.toml                 # Dependencies
-├── Dockerfile                 # Container
-├── .env.example               # Environment configuration
+
+The solution follows Clean Architecture, matching the RyzeAuth conventions:
+`Api -> Application -> Domain <- Infrastructure`, with `Contracts` holding the shared protobuf.
+
+---
+
+## Solution layout
+
+```text
+RyzeHub/
+├── RyzeHub.sln
+├── global.json                     # pinned .NET 10 SDK
+├── Directory.Build.props           # net10.0, nullable, warnings-as-errors
+├── Directory.Packages.props        # central package management
+├── docker-compose.yml
 ├── src/
-│   ├── main.rs                # Entry point / CLI
-│   ├── models.rs              # Data models
-│   ├── config.rs              # Configuration
-│   ├── transformer.rs         # Validate/Enrich/Filter
-│   ├── source_client.rs       # Client Dashboard API
-│   ├── destination_client.rs  # HelpCenter API + Circuit Breaker
-│   ├── pipeline.rs            # Main orchestrator
-│   ├── security.rs            # Encryption, Audit, Checksums
-│   ├── metrics.rs             # Prometheus metrics
-│   ├── errors.rs              # Error types
-│   ├── dependency_manager.rs  # Dependency scanner
-│   ├── docker_manager.rs      # Dockerfile generator
-│   ├── github_manager.rs      # GitHub API client
-│   └── hub_manager.rs         # Hub orchestrator
+│   ├── RyzeHub.Domain/             # tickets, platform records, diagnostics, error types
+│   ├── RyzeHub.Application/        # pipeline, transformer, crypto, hub platform, diagnostics
+│   ├── RyzeHub.Contracts/          # api_keys.proto (mirrors RyzeAuth)
+│   ├── RyzeHub.Infrastructure/     # HTTP clients, RyzeAuth client, DI wiring
+│   ├── RyzeHub.Api/                # ASP.NET Core minimal API + auth policies
+│   └── RyzeHub.Cli/                # `ryzehub` command line tool
+├── tests/
+│   ├── RyzeHub.UnitTests/
+│   └── RyzeHub.IntegrationTests/   # WebApplicationFactory API tests
 └── .github/workflows/
-    ├── ci-pipeline.yml            # Lint + Test + Security Audit + Cross-compile
-    ├── hub-auto-update.yml        # Hub update + Build Rust + Sync tickets
-    ├── hub-manager.yml            # Full hub management + dependencies
-    ├── dependency-analysis.yml    # Dependency analysis + license check
-    ├── docker-build.yml           # Multi-arch Docker build + push to GHCR
-    └── deploy-pipeline.yml        # Build → Docker → Staging → Production
+    ├── ci.yml                      # format, build, test, CLI smoke, Docker
+    ├── security.yml                # NuGet audit, CodeQL, crypto verification
+    ├── ryzeauth-integration.yml    # live RyzeAuth ecosystem + proto parity
+    ├── hub-manager.yml             # org scan, dependency graph, build order
+    └── release.yml                 # binaries, GHCR images, gated deploy
 ```
 
 ---
 
-## Quick Start
+## RyzeAuth integration
 
-### Requirements
-- Rust 1.70+ (or Docker)
+RyzeHub accepts two credential types, both validated against RyzeAuth.
 
-### Build
+### 1. User and service tokens (JWT)
 
-```bash
-# Debug build
-cargo build
+Bearer tokens issued by the `ryzespace` Keycloak realm. RyzeHub validates issuer, audience,
+lifetime and signature against the realm JWKS. On every successful validation
+`RyzeAuthRoleSynchronizer` projects the token onto the hub RBAC model:
 
-# Release build (optimized)
-cargo build --release
+| RyzeAuth realm role | RyzeHub platform role |
+| --- | --- |
+| `ryzehub-user` | `User` |
+| `ryzehub-seller` | `Seller` |
+| `ryzehub-moderator` | `Moderator` |
+| `ryzehub-support` | `Support` |
+| `ryzehub-admin` | `Admin` |
+| `ryzehub-superadmin` | `SuperAdmin` |
 
-# Binary is in: target/release/ticket-pipeline
-```
+Scopes of the form `hub:<resource>:<action>` become granular hub permissions
+(`hub:tickets:transfer` → `tickets:transfer`). Mappings are configurable via
+`RyzeAuth:RoleMappings`.
 
-### Configuration
+### 2. Scoped API keys (gRPC introspection)
+
+Machine-to-machine callers send `X-RyzeHub-Api-Key`. `RyzeAuthApiKeyHandler` calls the
+`ryzeauth.v1.ApiKeyIntrospection/Introspect` gRPC method on RyzeAuth. RyzeHub never stores or
+hashes API keys itself — RyzeAuth owns them. Positive results are cached briefly
+(`IntrospectionCacheSeconds`) keyed by a SHA-256 digest, never by the raw key.
+
+The resulting principal carries `organization_id`, `key_id` and the granted scopes, so tickets
+are tagged with the owning organization and the rate limiter partitions per organization.
+
+### Audit forwarding
+
+Every RyzeHub audit entry is mirrored into the immutable RyzeAuth security audit trail via
+`POST /internal/audit/events`, authenticated with a `client_credentials` service token. Forwarding
+is fire-and-forget: a RyzeAuth outage never fails a pipeline run.
+
+### Authorization policies
+
+| Policy | Requirement |
+| --- | --- |
+| Default / fallback | Authenticated via JWT **or** RyzeAuth API key |
+| `TicketTransfer` | Scope `hub:tickets:transfer`, or `Admin` / `SuperAdmin` role |
+| `PlatformWrite` | Scope `hub:platform:write`, or `Admin` / `SuperAdmin` role |
+| `PlatformAdmin` | Scope `hub:platform:admin`, or `SuperAdmin` role |
+
+### Required RyzeAuth setup
+
+In the `ryzespace` realm, provision:
+
+1. A confidential client `ryzehub-service` with service accounts enabled (client credentials).
+2. A client scope `ryzehub-api` and audience mapper so RyzeHub tokens carry `aud: ryzehub-api`.
+3. Realm roles `ryzehub-user` … `ryzehub-superadmin`.
+4. Client scopes `hub:tickets:transfer`, `hub:platform:write`, `hub:platform:admin`.
+5. API keys created through RyzeAuth carrying the `hub:tickets:transfer` scope.
+
+---
+
+## Quick start
+
+Requirements: the .NET SDK pinned in [`global.json`](global.json), plus Docker for the
+containerised flow.
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in values
+openssl rand -base64 32   # -> ENCRYPTION_KEY
+openssl rand -base64 32   # -> SIGNING_KEY
 ```
-
-### Run
 
 ```bash
-# One-time run
-cargo run
-
-# Or from binary
-./target/release/ticket-pipeline
-
-# Continuous mode
-./target/release/ticket-pipeline --continuous --interval 300
-
-# Health check
-./target/release/ticket-pipeline health
-
-# Metrics
-./target/release/ticket-pipeline metrics
-
-# Hub platform snapshot
-./target/release/ticket-pipeline platform snapshot
-
-# Hub platform demo data
-./target/release/ticket-pipeline platform demo --user-id user-001
-
-# Validate config
-./target/release/ticket-pipeline validate
-
-# Hub update
-./target/release/ticket-pipeline hub --org my-org --token $GITHUB_TOKEN --dir github_hub --dockerize
-
-# Dependency analysis
-./target/release/ticket-pipeline deps --path ./my-repo --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
-
-# Generate Dockerfile
-./target/release/ticket-pipeline docker --path ./my-repo
-
-# ENCRYPTION
-./target/release/ticket-pipeline encrypt --data "secret data" --key "$ENCRYPTION_KEY"
-./target/release/ticket-pipeline decrypt --data "ENC:..." --key "$ENCRYPTION_KEY"
-
-# DIGITAL SIGNATURES
-./target/release/ticket-pipeline sign --data "data to sign" --key "$SIGNING_KEY"
-./target/release/ticket-pipeline verify --data "data" --signature "..." --key "$SIGNING_KEY"
-
-# SECURE VAULT
-./target/release/ticket-pipeline vault store --key-id my-key --data "secret" --name "My Key"
-./target/release/ticket-pipeline vault retrieve --key-id my-key
-./target/release/ticket-pipeline vault list
-./target/release/ticket-pipeline vault integrity
-
-# ERROR DETECTION
-./target/release/ticket-pipeline errors analyze --message "Request timeout" --source "api"
-./target/release/ticket-pipeline errors stats
-./target/release/ticket-pipeline errors anomalies
-./target/release/ticket-pipeline errors test-patterns
+dotnet restore RyzeHub.sln
+dotnet build RyzeHub.sln -c Release
+dotnet test RyzeHub.sln -c Release
 ```
 
-### Hub Platform Modules
-
-`src/hub_platform.rs` models the shared RyzeHub platform layer and exposes the module catalog through `HubPlatform::module_catalog()` and `HubPlatform::enabled_modules()`.
-
-The current platform catalog contains 17 modules:
-
-1. `real_time_event_system`
-2. `notification_center`
-3. `audit_log_engine`
-4. `permission_role_hub`
-5. `presence_system`
-6. `device_management`
-7. `session_manager`
-8. `api_gateway`
-9. `distributed_cache`
-10. `activity_feed`
-11. `internal_messaging`
-12. `feature_flags`
-13. `health_monitoring`
-14. `telemetry_analytics`
-15. `security_center`
-16. `event_bus`
-17. `file_transfer_service`
-
-The `platform snapshot` command returns:
-- module catalog with examples and business benefits
-- default roles and permissions
-- feature flags
-- event subscriptions
-- gateway routes
-- monitored services
-- telemetry counters and health status
-
-### Hub Platform CLI
-
-All platform commands support optional demo seeding:
+Run the API (expects RyzeAuth on `:8080`/`:8081`):
 
 ```bash
-ticket-pipeline platform --seed-demo-user user-001 <subcommand>
+dotnet run --project src/RyzeHub.Api
+# https://localhost:8082/scalar/v1  - API reference
+# http://localhost:8082/health/live - liveness
+# http://localhost:8082/metrics     - Prometheus
 ```
 
-Available subcommands:
+Or with Compose:
 
 ```bash
-# Core views
-ticket-pipeline platform snapshot
-ticket-pipeline platform demo --user-id user-001
-ticket-pipeline platform modules
-ticket-pipeline platform health
-
-# Eventing and notifications
-ticket-pipeline platform events --limit 50
-ticket-pipeline platform endpoints
-ticket-pipeline platform notifications --user-id user-001 --limit 20
-ticket-pipeline platform notify --user-id user-001 --title "Alert" --message "New login" --channels "email,sms" --priority high
-
-# Audit, access and identity
-ticket-pipeline platform audit --actor-id admin-001 --limit 50
-ticket-pipeline platform roles
-ticket-pipeline platform access --user-id user-001
-ticket-pipeline platform assign-role --user-id user-001 --role Support
-ticket-pipeline platform grant --user-id user-001 --permission billing:manage
-ticket-pipeline platform presence --user-id user-001
-ticket-pipeline platform devices --user-id user-001
-ticket-pipeline platform sessions --user-id user-001
-
-# Gateway, cache and activity
-ticket-pipeline platform routes
-ticket-pipeline platform cache
-ticket-pipeline platform cache --key session:user-001
-ticket-pipeline platform put-cache --key dashboard:user-001 --value '{"widgets":["billing","servers"]}'
-ticket-pipeline platform activity --user-id user-001 --limit 20
-
-# Messaging and rollout
-ticket-pipeline platform messages --user-id user-001 --limit 20
-ticket-pipeline platform send-message --from-user user-001 --to-user support-001 --body "Potrzebuję pomocy"
-ticket-pipeline platform flags
-ticket-pipeline platform set-flag --key betaBilling --enabled true --description "Nowy billing"
-
-# Monitoring and security
-ticket-pipeline platform services
-ticket-pipeline platform update-service --service redis-cache --healthy true --latency-ms 5
-ticket-pipeline platform security --user-id user-001 --limit 20
-ticket-pipeline platform alert --user-id user-001 --description "Logowanie z nowego urządzenia" --channels "email,sms"
-ticket-pipeline platform subscriptions
-
-# File transfer
-ticket-pipeline platform files --owner-id user-001 --limit 20
-ticket-pipeline platform record-file --owner-id user-001 --file-name support-log.zip --scanned true --encrypted true --versioned true
+docker compose up -d --build
 ```
 
-Note:
-- `HubPlatform` currently works as an in-memory platform runtime.
-- CLI write operations update the current process state immediately, but are not persisted between separate binary runs unless a durable backend is added later.
+---
 
-### Docker
+## CLI
 
 ```bash
-# Build
-docker build -t ticket-pipeline .
-
-# Run
-docker run --env-file .env ticket-pipeline
-
-# Continuous mode
-docker run --env-file .env ticket-pipeline --continuous
+dotnet run --project src/RyzeHub.Cli -- <command>
+# or, after `dotnet publish`:
+./ryzehub <command>
 ```
+
+| Command | Description |
+| --- | --- |
+| `run [--continuous]` | Execute the ticket pipeline once or on a poll loop |
+| `health` | Pipeline + RyzeAuth health check |
+| `validate` | Validate configuration and print the effective settings |
+| `hub [--dockerize]` | Clone the org, analyse dependencies, compute build order |
+| `deps --path <p>` | Report internal dependencies of a repository |
+| `docker --path <p>` | Detect the language and generate a Dockerfile |
+| `encrypt / decrypt --data` | AES-256-GCM envelope operations |
+| `sign / verify --data` | HMAC-SHA256 signatures |
+| `vault store\|retrieve\|list\|integrity` | Secure vault operations |
+| `errors analyze\|stats\|anomalies\|patterns\|predictions` | Error detection engine |
+| `platform <action>` | Inspect and drive the hub platform modules |
+| `auth health\|introspect-key\|introspect-token` | RyzeAuth control plane |
+
+Examples:
+
+```bash
+ryzehub platform snapshot --seed-demo-user user-001
+ryzehub auth introspect-key --api-key rk_live_... --scope hub:tickets:transfer
+ryzehub errors analyze --message "401 Unauthorized" --source api_client
+```
+
+---
+
+## HTTP API
+
+| Route | Auth | Description |
+| --- | --- | --- |
+| `GET /health/live`, `/health/ready` | anonymous | Probes |
+| `GET /metrics` | anonymous | Prometheus scrape |
+| `GET /scalar/v1`, `/openapi/v1.json` | anonymous | API reference |
+| `POST /api/pipeline/run` | `TicketTransfer` | Run the pipeline once (rate limited) |
+| `GET /api/pipeline/health` | anonymous | Pipeline + upstream + RyzeAuth health |
+| `GET /api/platform/*` | authenticated | Snapshot, events, notifications, audit, RBAC, … |
+| `POST /api/platform/*` | `PlatformWrite` / `PlatformAdmin` | Mutations |
+| `GET /api/diagnostics/*` | authenticated | Error detection and anomaly analysis |
+| `GET/POST /api/hub/*` | `PlatformAdmin` | Repository catalog and hub updates |
+
+---
+
+## Hub platform modules
+
+All 17 modules are active and exposed under `/api/platform`:
+
+Real Time Event System · Notification Center · Audit Log Engine · Permission & Role Hub ·
+Presence System · Device Management · Session Manager · API Gateway · Distributed Cache ·
+Activity Feed · Internal Messaging · Feature Flags · Health Monitoring · Telemetry & Analytics ·
+Security Center · Event Bus · File Transfer Service
 
 ---
 
 ## Security
 
-### Encryption
-
-Pipeline uses **multi-layer encryption system**:
-
-```bash
-# Generate key
-openssl rand -base64 32
-
-# Set in .env
-ENCRYPTION_KEY=your-base64-key-here
-```
-
-**Cryptographic components:**
-- **CryptoEngine** — AES-256-GCM encryption with context and metadata
-- **KeyManager** — hierarchical key management (master → derived → session)
-- **SecureVault** — encrypted key storage with access control (ACL)
-- **SignatureEngine** — HMAC-SHA256 digital signatures
-
-**Features:**
-- Key rotation every 30 days (automatic)
-- Key derivation from master key (HKDF)
-- Session keys (24h lifetime)
-- Data integrity (SHA-256 checksum)
-- Encryption metadata (version, algorithm, key_id, timestamps)
-
-### Secure Vault
-
-```bash
-# Store key
-ticket-pipeline vault store --key-id api-key --data "secret123" --name "API Key"
-
-# Retrieve key
-ticket-pipeline vault retrieve --key-id api-key
-
-# List keys
-ticket-pipeline vault list
-
-# Check integrity
-ticket-pipeline vault integrity
-```
-
-### Digital Signatures
-
-```bash
-# Sign data
-ticket-pipeline sign --data "important data" --key "$SIGNING_KEY"
-
-# Verify signature
-ticket-pipeline verify --data "important data" --signature "abc123..." --key "$SIGNING_KEY"
-```
-
-### Audit Log
-
-Every operation is logged:
-```
-AUDIT: {"timestamp":"...","action":"ticket_transfer","ticket_id":"T-001",...}
-AUDIT: {"timestamp":"...","action":"key_rotation","key_id":"...","algorithm":"AES-256-GCM"}
-AUDIT: {"timestamp":"...","action":"vault_access","key_id":"...","user":"..."}
-```
-
-### Circuit Breaker
-
-Automatically disables communication with helpcenter after 5 consecutive errors.
-After 60 seconds, attempts to resume (half-open).
-
-### Rate Limiting
-
-Limits number of requests to API (default 100/min).
-
----
-
-## Error Detection
-
-### Detection System
-
-**Built-in patterns:**
-- `network_timeout` — connection timeouts
-- `auth_failure` — authorization errors (401, 403)
-- `rate_limit` — rate limit exceeded (429)
-- `validation_error` — data validation errors
-- `connection_error` — connection errors (503, connection refused)
-
-### Error Analysis
-
-```bash
-# Analyze error message
-ticket-pipeline errors analyze --message "Request timeout after 30s" --source "api_client"
-
-# Result:
-# Error ID: 550e8400-e29b-41d4-a716-446655440000
-# Category: Timeout
-# Severity: Medium
-# Pattern: network_timeout
-```
-
-### Anomaly Detection
-
-**Detection methods:**
-- **Z-score** — statistical outlier detection (threshold: 3σ)
-- **IQR** — Interquartile Range (multiplier: 1.5)
-- **Moving Average** — moving average (window: 10)
-- **Exponential Smoothing** — exponential smoothing (alpha: 0.3)
-
-```bash
-# Test anomaly detection
-ticket-pipeline errors anomalies
-
-# Result:
-# Detected 1 anomalies
-#   Z-score anomaly: 4.52 (threshold: 3.00)
-#     Severity: 0.75
-#     Confidence: 1.00
-```
-
-### Statistics & Monitoring
-
-```bash
-# Error statistics
-ticket-pipeline errors stats
-
-# Result:
-# Timeout: 15
-# Authentication: 3
-# RateLimit: 7
-# Validation: 2
-
-# List patterns
-ticket-pipeline errors test-patterns
-```
-
-### Error Correlation
-
-System automatically correlates errors in time window:
-- Groups errors by source
-- Detects correlated failures
-- Predicts potential issues
-
-### Anomaly Metrics
-
-Monitored metrics:
-- `error_rate` — error frequency
-- `transfer_duration` — transfer time
-- `api_latency` — API latency
-- `success_rate` — success rate
-- `retry_count` — retry count
-
-### Custom Patterns
-
-Ability to add custom patterns:
-
-```rust
-let pattern = ErrorPattern {
-    id: "custom_error".to_string(),
-    name: "Custom Error".to_string(),
-    description: "Custom error pattern".to_string(),
-    regex_pattern: r"(?i)(custom.*error)".to_string(),
-    category: ErrorCategory::Unknown,
-    severity: ErrorSeverity::Medium,
-    // ...
-};
-
-engine.add_pattern(pattern);
-```
-
----
-
-## Metrics
-
-Pipeline exports metrics in Prometheus format:
-
-```
-pipeline_tickets_fetched_total        # Fetched tickets
-pipeline_tickets_transferred_total    # Transferred tickets
-pipeline_tickets_failed_total         # Transfer errors
-pipeline_tickets_filtered_total       # Filtered
-pipeline_runs_total                   # Pipeline runs
-pipeline_transfer_duration_ms         # Transfer time
-pipeline_active_connections           # Active connections
-```
+- **AES-256-GCM** payload encryption with per-packet nonces, auth tags and SHA-256 checksums.
+- **Key rotation** — old key ids stay decryptable after a rotation.
+- **HMAC-SHA256** signatures for tickets and outbound requests, verified in constant time.
+- **Hierarchical keys** — master → derived (per purpose) → 24h session keys.
+- **Secure vault** — AES-GCM encrypted at rest with an ACL and an integrity hash.
+- **No credential ownership** — passwords, MFA, sessions and API keys belong to RyzeAuth.
+- Security headers, strict CORS, per-organization rate limiting and correlation ids on every request.
 
 ---
 
 ## CI/CD
 
-### Workflows
+| Workflow | Trigger | Purpose |
+| --- | --- | --- |
+| `ci.yml` | push / PR | `dotnet format`, build, unit + integration tests, CLI smoke, Docker build |
+| `security.yml` | push / PR / weekly | Vulnerable-package gate, CodeQL, crypto verification, secret scan |
+| `ryzeauth-integration.yml` | push / PR / nightly | Proto parity with RyzeAuth + live Compose ecosystem test |
+| `hub-manager.yml` | nightly / manual | Org scan, dependency graph, build order, RyzeAuth dependency gate |
+| `release.yml` | tags / manual | Multi-RID binaries, multi-arch GHCR images, gated deploy |
 
-| Workflow | Trigger | Description |
-|----------|---------|-------------|
-| **CI Pipeline** | push/PR | Lint + Test + Security Audit + Cross-compile |
-| **Hub Auto-Update** | Cron (daily) | Hub update + Build Rust + Sync tickets |
-| **Hub Manager** | Cron (every 6h) + manual | Clone repos → analyze deps → Dockerize → build |
-| **Dependency Analysis** | push (deps files) + PR | Dependency scan + security audit + license check |
-| **Docker Build** | push (main) + tag | Multi-arch Docker build → GHCR (amd64 + arm64) |
-| **Security & Encryption** | push (crypto/**) + weekly | Crypto audit + encryption tests + key rotation check |
-| **Error Detection** | push (error_detection/**) + every 15min | Error pattern tests + anomaly detection + monitoring |
-| **Deploy** | push (src/**) | Build → Docker → Staging → Production |
-
-### New CLI Commands
-
-```bash
-# Hub Management
-ticket-pipeline hub --org my-org --token $TOKEN --dir github_hub --dockerize
-
-# Dependency Analysis
-ticket-pipeline deps --path ./repo --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
-
-# Docker Generation
-ticket-pipeline docker --path ./repo
-
-# Encryption
-ticket-pipeline encrypt --data "secret" --key "$KEY"
-ticket-pipeline decrypt --data "ENC:..." --key "$KEY"
-
-# Digital Signatures
-ticket-pipeline sign --data "data" --key "$KEY"
-ticket-pipeline verify --data "data" --signature "sig" --key "$KEY"
-
-# Secure Vault
-ticket-pipeline vault store --key-id id --data data --name name
-ticket-pipeline vault retrieve --key-id id
-ticket-pipeline vault list
-ticket-pipeline vault integrity
-
-# Error Detection
-ticket-pipeline errors analyze --message msg --source src
-ticket-pipeline errors stats
-ticket-pipeline errors anomalies
-ticket-pipeline errors test-patterns
-```
+All workflows use `actions/checkout@v4` with NuGet caching, least-privilege `permissions`,
+concurrency groups and job timeouts.
 
 ### Required secrets
 
-```bash
-# Pipeline
-CLIENT_DASHBOARD_URL=https://...
-CLIENT_DASHBOARD_API_KEY=...
-HELPCENTER_URL=https://...
-HELPCENTER_API_KEY=...
-
-# Security
-ENCRYPTION_KEY=<openssl rand -base64 32>
-SIGNING_KEY=<openssl rand -base64 32>
-
-# Hub Manager
-HUB_GITHUB_TOKEN=ghp_...
-HUB_ORG_NAME=my-org
-```
+| Secret | Used by | Purpose |
+| --- | --- | --- |
+| `RYZEAUTH_REPO_TOKEN` | `ryzeauth-integration` | Read access to `ryzespace/RyzeAuth` if private |
+| `RYZEHUB_CLIENT_SECRET` | `ryzeauth-integration` | `ryzehub-service` client secret in CI |
+| `HUB_GITHUB_TOKEN`, `HUB_ORG_NAME` | `hub-manager` | Organization scanning |
+| `RYZEAUTH_AUTHORITY`, `RYZEAUTH_API_BASE_URL`, `RYZEAUTH_CLIENT_SECRET`, `ENCRYPTION_KEY` | `release` | Deployment gate |
 
 ---
 
-## Tests
+## Configuration
 
-```bash
-# Unit tests
-cargo test
+Configuration binds from `appsettings.json`, environment variables and `.env`. The legacy flat
+variables from the Rust version still work and are mapped onto the new sections — see
+[`src/RyzeHub.Cli/EnvironmentConfiguration.cs`](src/RyzeHub.Cli/EnvironmentConfiguration.cs).
 
-# With output
-cargo test -- --nocapture
-```
-
----
-
-## Dependency Manager
-
-### Features
-
-- **Multi-format scanning** — requirements.txt, package.json, Cargo.toml, go.mod, pyproject.toml
-- **Dependency graph** — builds internal dependency graph between repos
-- **Topological sort** — determines optimal build order
-- **Cycle detection** — reports cyclic dependencies
-
-### Usage
-
-```bash
-# Analyze dependencies in repository
-ticket-pipeline deps --path ./github_hub/RyzeSpace.Client --repos "RyzeSpace.Client,RyzeSpace.HelpCenter,RyzeSpace.AdminPanel,RyzeSpace.Mobile,RyzeSpace.Desktop"
-
-# Result:
-# Found 2 internal dependencies:
-#   RyzeSpace.HelpCenter
-#   RyzeSpace.Mobile
-```
+| Section | Purpose |
+| --- | --- |
+| `RyzeAuth` | Authority, audience, API base URL, client credentials, scopes, role mappings |
+| `Pipeline` | Categorization, prioritization, deduplication, poll interval |
+| `Source` / `Destination` | Upstream URLs, keys, timeouts, retries, rate limits, circuit breaker |
+| `Security` | Encryption/signing keys, audit, checksums, vault |
+| `Hub` | Platform retention, cache, gateway, telemetry |
+| `HubManager` | GitHub organization, token, hub directory |
 
 ---
 
-## Docker Manager
+## Migration from the Rust implementation
 
-### Features
+| Rust | C# |
+| --- | --- |
+| `src/models.rs` | `RyzeHub.Domain/Tickets` |
+| `src/config.rs` | `RyzeHub.Application/Configuration/PipelineOptions.cs` |
+| `src/errors.rs` | `RyzeHub.Domain/Errors/PipelineException.cs` |
+| `src/transformer.rs` | `RyzeHub.Application/Tickets/TicketTransformer.cs` |
+| `src/source_client.rs`, `src/destination_client.rs` | `RyzeHub.Infrastructure/Clients` |
+| `src/pipeline.rs` | `RyzeHub.Application/Pipeline/TicketPipeline.cs` |
+| `src/security.rs`, `src/crypto/*` | `RyzeHub.Application/Security` |
+| `src/error_detection/*` | `RyzeHub.Application/Diagnostics` |
+| `src/hub_platform.rs` | `RyzeHub.Application/Platform` |
+| `src/hub_catalog.rs`, `src/hub_manager.rs`, `src/dependency_manager.rs`, `src/docker_manager.rs`, `src/github_manager.rs` | `RyzeHub.Application/Hub` |
+| `src/metrics.rs` (Prometheus crate) | `RyzeHub.Application/Pipeline/PipelineMetrics.cs` (OpenTelemetry) |
+| `src/main.rs` (clap) | `RyzeHub.Cli` + `RyzeHub.Api` |
 
-- **Language auto-detection** — recognizes Python, Node.js, Rust, Go, .NET
-- **Dockerfile generation** — optimal templates per language
-- **Multi-stage builds** — for Rust (builder + runtime)
-- **docker-compose.yml** — generates configuration for multiple repos
-
-### Supported Languages
-
-| Language | Image | Features |
-|---|---|---|
-| Python | `python:3.11-slim` | pip install + requirements.txt |
-| Node.js | `node:20-slim` | npm install + package.json |
-| Rust | `rust:1.75-slim` | Multi-stage build, ~15MB final image |
-| Go | `golang:1.21-slim` | go build + binary |
-| .NET | `.net:8-slim` | dotnet build |
-| Generic | `ubuntu:latest` | Fallback |
-
----
-
-## Hub Manager
-
-### Flow
-
-```
-1. Clone all repos from org
-2. Analyze dependencies (scan Cargo.toml, package.json, etc.)
-3. Build dependency graph + topological sort
-4. Generate Dockerfiles (auto-detect language)
-5. Generate docker-compose.yml
-6. Output build order
-```
-
-### Usage
-
-```bash
-ticket-pipeline hub \
-  --org my-org \
-  --token $GITHUB_TOKEN \
-  --dir github_hub \
-  --dockerize
-
-# Result:
-# Cloned: 15 repos
-# Dependencies: 23 edges
-# Dockerized: 15 repos
-# Build order: RyzeSpace.HelpCenter -> RyzeSpace.Client -> RyzeSpace.AdminPanel -> RyzeSpace.Mobile -> RyzeSpace.Desktop
-```
-
----
-
-## Comparison with Python
-
-| Feature | Python | Rust |
-|---|---|---|
-| **Startup Time** | ~200ms | ~5ms |
-| **Memory** | ~50MB | ~3MB |
-| **Binary size** | N/A | ~5MB |
-| **Encryption** | AES-256-GCM (basic) | **Multi-layer** (AES-256-GCM + Key Derivation + Vault + Signatures) |
-| **Key Management** | None | **Hierarchical** (master → derived → session) |
-| **Key Rotation** | None | ✓ Automatic (30 days) |
-| **Digital Signatures** | None | ✓ HMAC-SHA256 |
-| **Secure Vault** | None | ✓ Encrypted storage with ACL |
-| **Error Detection** | None | **Full system** (5+ patterns, 4 detection methods) |
-| **Anomaly Detection** | None | ✓ Z-score, IQR, Moving Average, Exp. Smoothing |
-| **Error Correlation** | None | ✓ Time-based correlation |
-| **Predictive Analysis** | None | ✓ Issue prediction |
-| **Circuit breaker** | None | ✓ |
-| **Rate limiting** | None | ✓ |
-| **Audit log** | None | ✓ Full cryptographic audit trail |
-| **Prometheus metrics** | None | ✓ |
-| **Health checks** | None | ✓ |
-| **Async** | None | ✓ (tokio) |
-| **Connection pool** | None | ✓ |
-| **Cross-compile** | None | Linux, ARM, musl |
-| **Docker** | ~1GB | ~15MB |
-| **Dependency Management** | None | ✓ Multi-language scanner |
-| **Docker Manager** | None | ✓ Auto-detect + generate |
-| **Hub Manager** | None | ✓ Full orchestration |
-
----
-
-## System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    TICKET PIPELINE (Rust)                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                                │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │ Client       │    │   Pipeline   │    │  HelpCenter  │   │
-│  │ Dashboard    │───▶│  Orchestrator│───▶│  Dashboard   │   │
-│  │ (REST API)   │    │              │    │  (REST API)  │   │
-│  └──────────────┘    └──────┬───────┘    └──────────────┘   │
-│                              │                                │
-│         ┌────────────────────┼────────────────────┐          │
-│         │                    │                    │          │
-│         ▼                    ▼                    ▼          │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │   Crypto     │    │    Error     │    │   Security   │   │
-│  │   Engine     │    │  Detection   │    │   Manager    │   │
-│  │              │    │              │    │              │   │
-│  │ • AES-256    │    │ • Patterns   │    │ • Rate Limit │   │
-│  │ • Key Mgmt   │    │ • Anomalies  │    │ • Circuit Brk│   │
-│  │ • Vault      │    │ • Statistics │    │ • Audit Log  │   │
-│  │ • Signatures │    │ • Predictive │    │ • Checksums  │   │
-│  └──────────────┘    └──────────────┘    └──────────────┘   │
-│                                                                │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Usage Examples
-
-### 1. Encrypt ticket data
-
-```bash
-# Generate key
-export ENCRYPTION_KEY=$(openssl rand -base64 32)
-
-# Encrypt description
-ENCRYPTED=$(./ticket-pipeline encrypt --data "Sensitive ticket data" --key "$ENCRYPTION_KEY")
-
-# Encryption is automatic in pipeline
-./ticket-pipeline --continuous
-```
-
-### 2. Sign API requests
-
-```bash
-export SIGNING_KEY=$(openssl rand -base64 32)
-
-# Sign request
-SIGNATURE=$(./ticket-pipeline sign --data "POST:/api/tickets:{\"data\":1}" --key "$SIGNING_KEY")
-
-# Verify signature
-./ticket-pipeline verify --data "POST:/api/tickets:{\"data\":1}" --signature "$SIGNATURE" --key "$SIGNING_KEY"
-```
-
-### 3. Error monitoring
-
-```bash
-# Analyze error
-./ticket-pipeline errors analyze --message "Connection timeout after 30s" --source "helpcenter_api"
-
-# Check statistics
-./ticket-pipeline errors stats
-
-# Detect anomalies
-./ticket-pipeline errors anomalies
-```
-
-### 4. Key management
-
-```bash
-# Store API key
-./ticket-pipeline vault store --key-id "helpcenter-api" --data "secret-api-key" --name "HelpCenter API Key"
-
-# Retrieve key
-./ticket-pipeline vault retrieve --key-id "helpcenter-api"
-
-# Check integrity
-./ticket-pipeline vault integrity
-```
-
----
-
-## Deployment
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  ticket-pipeline:
-    image: ghcr.io/your-org/ticket-pipeline:latest
-    environment:
-      - CLIENT_DASHBOARD_URL=https://client.example.com/api
-      - CLIENT_DASHBOARD_API_KEY=${CLIENT_API_KEY}
-      - HELPCENTER_URL=https://helpcenter.example.com/api
-      - HELPCENTER_API_KEY=${HC_API_KEY}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - SIGNING_KEY=${SIGNING_KEY}
-    command: --continuous --interval 300
-    restart: always
-```
-
-### Kubernetes
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ticket-pipeline
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: ticket-pipeline
-  template:
-    metadata:
-      labels:
-        app: ticket-pipeline
-    spec:
-      containers:
-      - name: ticket-pipeline
-        image: ghcr.io/your-org/ticket-pipeline:latest
-        command: ["/app/ticket-pipeline", "--continuous"]
-        envFrom:
-        - secretRef:
-            name: pipeline-secrets
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "500m"
-```
-
----
-
-## License
-
-MIT
+New in the C# version: first-class RyzeAuth integration, an HTTP API, OpenTelemetry tracing,
+and per-organization ticket tagging.

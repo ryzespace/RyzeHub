@@ -1,3 +1,29 @@
-.idea
-.env.example
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+publish/
+TestResults/
+*.user
+*.suo
+*.trx
+*.coverage
+*.cobertura.xml
+coverage/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# Secrets and local state
 .env
+vault.json
+github_hub/
+
+# OS
+.DS_Store
+Thumbs.db
