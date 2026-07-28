@@ -10,7 +10,7 @@ hold the GitHub App `workflows` permission, so it cannot create or update files 
 From a checkout of this branch, with a token that can write workflows:
 
 ```bash
-git checkout arena/019fa9ed-ryzehub-v2
+git checkout arena/019fa9ed-ryzehub
 
 cp docs/ci/*.yml .github/workflows/
 
