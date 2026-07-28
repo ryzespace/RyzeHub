@@ -1,0 +1,152 @@
+name: hub-manager
+
+# Clones the RyzeSpace organization, analyses cross-repository dependencies
+# and computes a build order. RyzeAuth is tracked as an active repository,
+# so services that depend on it are always built after it.
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dockerize:
+        description: Generate Dockerfiles for cloned repositories
+        type: boolean
+        default: true
+      organization:
+        description: GitHub organization to scan
+        required: false
+        default: ryzespace
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hub-manager
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-cli:
+    name: Build hub CLI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish CLI
+        run: dotnet publish src/RyzeHub.Cli/RyzeHub.Cli.csproj -c Release -o artifacts/cli
+
+      - name: Upload CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryzehub-cli
+          path: artifacts/cli
+          retention-days: 1
+
+  update-hub:
+    name: Update hub snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: build-cli
+    outputs:
+      build-order: ${{ steps.hub.outputs.build-order }}
+    steps:
+      - name: Download CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzehub-cli
+          path: artifacts/cli
+
+      - name: Make CLI executable
+        run: chmod +x artifacts/cli/ryzehub
+
+      - name: Run hub update
+        id: hub
+        env:
+          HUB_ORG_NAME: ${{ inputs.organization || secrets.HUB_ORG_NAME || 'ryzespace' }}
+          GITHUB_TOKEN: ${{ secrets.HUB_GITHUB_TOKEN || github.token }}
+          HUB_DIR: github_hub
+        run: |
+          set -euo pipefail
+          DOCKERIZE=""
+          if [ "${{ inputs.dockerize }}" != "false" ]; then
+            DOCKERIZE="--dockerize"
+          fi
+
+          ./artifacts/cli/ryzehub hub $DOCKERIZE | tee hub-result.json
+
+          {
+            echo "build-order<<EOF"
+            jq -c '.buildOrder' hub-result.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Hub update summary"
+            echo ""
+            if [ -f hub-result.json ]; then
+              echo "| Metric | Value |"
+              echo "| --- | --- |"
+              echo "| Cloned repositories | $(jq -r '.clonedCount' hub-result.json) |"
+              echo "| Dependency edges | $(jq -r '.dependencyEdges' hub-result.json) |"
+              echo "| Dockerized | $(jq -r '.dockerizedCount' hub-result.json) |"
+              echo "| Active repositories | $(jq -r '.activeRepositories | join(", ")' hub-result.json) |"
+              echo "| Missing active | $(jq -r '.missingActiveRepositories | join(", ") // "none"' hub-result.json) |"
+              echo "| Build order | $(jq -r '.buildOrder | join(" -> ")' hub-result.json) |"
+              echo "| Platform modules | $(jq -r '.enabledPlatformModules | length' hub-result.json) |"
+            else
+              echo "Hub update did not produce a result file."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload hub snapshot metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-result
+          path: hub-result.json
+          if-no-files-found: warn
+
+  dependency-analysis:
+    name: Dependency analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: build-cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzehub-cli
+          path: artifacts/cli
+
+      - name: Make CLI executable
+        run: chmod +x artifacts/cli/ryzehub
+
+      - name: Analyse this repository
+        run: |
+          set -euo pipefail
+          ./artifacts/cli/ryzehub deps --path . | tee deps.json
+          echo "### Internal dependencies" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.dependencies[]? // "none"' deps.json | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assert RyzeAuth dependency is declared
+        run: |
+          set -euo pipefail
+          if jq -e '.dependencies | index("RyzeAuth")' deps.json > /dev/null; then
+            echo "RyzeHub correctly declares its RyzeAuth dependency"
+          else
+            echo "::error::RyzeHub no longer references RyzeAuth - the integration may have been removed"
+            exit 1
+          fi

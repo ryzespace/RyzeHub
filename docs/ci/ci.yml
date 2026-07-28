@@ -1,0 +1,199 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  format:
+    name: Format & analyzers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Restore
+        run: dotnet restore RyzeHub.sln
+      - name: Verify formatting
+        run: dotnet format RyzeHub.sln --verify-no-changes --no-restore --verbosity diagnostic
+
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore
+        run: dotnet restore RyzeHub.sln
+
+      - name: Build
+        run: dotnet build RyzeHub.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: >
+          dotnet test tests/RyzeHub.UnitTests/RyzeHub.UnitTests.csproj
+          --configuration Release --no-build
+          --logger "trx;LogFileName=unit.trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/test-results
+
+      - name: Integration tests
+        run: >
+          dotnet test tests/RyzeHub.IntegrationTests/RyzeHub.IntegrationTests.csproj
+          --configuration Release --no-build
+          --logger "trx;LogFileName=integration.trx"
+          --results-directory artifacts/test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results
+          if-no-files-found: warn
+
+  cli-smoke:
+    name: CLI smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Publish CLI
+        run: dotnet publish src/RyzeHub.Cli/RyzeHub.Cli.csproj -c Release -o artifacts/cli
+
+      - name: Generate ephemeral keys
+        run: |
+          {
+            echo "ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            echo "SIGNING_KEY=$(openssl rand -base64 32)"
+          } >> "$GITHUB_ENV"
+
+      - name: Crypto round trip
+        run: |
+          set -euo pipefail
+          ENVELOPE=$(./artifacts/cli/ryzehub encrypt --data "Test ticket data" | jq -r '.encrypted')
+          test -n "$ENVELOPE"
+          DECRYPTED=$(./artifacts/cli/ryzehub decrypt --data "$ENVELOPE" | jq -r '.decrypted')
+          test "$DECRYPTED" = "Test ticket data"
+          echo "Crypto round trip OK"
+
+      - name: Signature round trip
+        run: |
+          set -euo pipefail
+          SIGNATURE=$(./artifacts/cli/ryzehub sign --data "Test data" | jq -r '.signature')
+          ./artifacts/cli/ryzehub verify --data "Test data" --signature "$SIGNATURE"
+          echo "Signature round trip OK"
+
+      - name: Vault operations
+        env:
+          VAULT_PATH: /tmp/ci-vault.json
+          VAULT_USER: ci_user
+        run: |
+          set -euo pipefail
+          ./artifacts/cli/ryzehub vault store --key-id ci-key --data "secret" --name "CI Key"
+          ./artifacts/cli/ryzehub vault list | jq -e 'index("ci-key")'
+          ./artifacts/cli/ryzehub vault integrity | jq -e '.integrityHash | length == 64'
+
+      - name: Hub platform snapshot exposes 17 modules
+        run: |
+          set -euo pipefail
+          ./artifacts/cli/ryzehub platform snapshot --seed-demo-user ci-user \
+            | jq -e '.enabledModules | length == 17'
+
+      - name: Error detection patterns
+        run: |
+          set -euo pipefail
+          ./artifacts/cli/ryzehub errors analyze --message "401 Unauthorized: invalid token" --source ci \
+            | jq -e '.category == "Authentication"'
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/ci-vault.json
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/RyzeHub.Api/Dockerfile
+          push: false
+          load: true
+          tags: ryzehub-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build CLI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/RyzeHub.Cli/Dockerfile
+          push: false
+          load: true
+          tags: ryzehub-cli:ci
+          cache-from: type=gha,scope=cli
+          cache-to: type=gha,mode=max,scope=cli
+
+      - name: Smoke test API container
+        run: |
+          set -euo pipefail
+          docker run -d --name ryzehub-api-ci -p 8082:8082 \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e ASPNETCORE_URLS=http://+:8082 \
+            -e RyzeAuth__RequireHttpsMetadata=false \
+            -e RyzeAuth__ApiKeyIntrospectionEnabled=false \
+            -e RyzeAuth__ForwardAuditEvents=false \
+            -e Security__EncryptionKey="$(openssl rand -base64 32)" \
+            ryzehub-api:ci
+
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8082/health/live; then
+              echo "API is live"
+              curl --fail --silent http://localhost:8082/api/platform/modules | jq -e 'length == 17'
+              docker rm -f ryzehub-api-ci
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs ryzehub-api-ci
+          docker rm -f ryzehub-api-ci
+          exit 1
