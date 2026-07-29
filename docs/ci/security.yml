@@ -1,0 +1,141 @@
+name: security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore RyzeHub.sln
+
+      - name: Fail on vulnerable packages
+        run: |
+          set -euo pipefail
+          dotnet list RyzeHub.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "::error::Vulnerable NuGet packages detected"
+            exit 1
+          fi
+          echo "No vulnerable packages found"
+
+      - name: Report deprecated and outdated packages
+        continue-on-error: true
+        run: |
+          dotnet list RyzeHub.sln package --deprecated --include-transitive
+          dotnet list RyzeHub.sln package --outdated
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: vulnerable.txt
+          if-no-files-found: ignore
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          build-mode: manual
+
+      - name: Build
+        run: dotnet build RyzeHub.sln --configuration Release
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:csharp
+
+  crypto-verification:
+    name: Cryptography verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run cryptography and vault tests
+        run: >
+          dotnet test tests/RyzeHub.UnitTests/RyzeHub.UnitTests.csproj
+          --configuration Release
+          --filter "FullyQualifiedName~Crypto|FullyQualifiedName~Signature|FullyQualifiedName~Vault|FullyQualifiedName~KeyManager"
+          --logger "trx;LogFileName=crypto.trx"
+          --results-directory artifacts/test-results
+
+      - name: Reject weak algorithms in security code
+        run: |
+          set -euo pipefail
+          if grep -rniE '\b(MD5|SHA1|DES|TripleDES|RC2)\b' src --include='*.cs' \
+             | grep -viE 'SHA(256|384|512)'; then
+            echo "::error::Weak cryptographic primitive detected"
+            exit 1
+          fi
+          echo "No weak algorithms found"
+
+      - name: Ensure AES-GCM key sizes are 256-bit
+        run: |
+          set -euo pipefail
+          if grep -rn "requiredLength: 32" src --include='*.cs' > /dev/null; then
+            echo "Crypto engine enforces 32-byte (256-bit) keys"
+          else
+            echo "::error::Crypto engine no longer enforces 256-bit keys"
+            exit 1
+          fi
+
+      - name: Detect committed secrets
+        run: |
+          set -euo pipefail
+          # Placeholder values in appsettings/.env.example are expected; real values are not.
+          if grep -rnE '(ClientSecret|EncryptionKey|SigningKey|ApiKey)"?\s*[:=]\s*"[A-Za-z0-9+/]{24,}={0,2}"' \
+             src --include='*.json' | grep -viE 'REPLACE_WITH|CHANGE_ME|""'; then
+            echo "::error::Possible committed secret detected"
+            exit 1
+          fi
+          echo "No committed secrets found"
+
+      - name: Upload crypto test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-test-results
+          path: artifacts/test-results
+          if-no-files-found: ignore
