@@ -1,0 +1,227 @@
+name: ryzeauth-integration
+
+# Verifies RyzeHub against a live ryzespace/RyzeAuth control plane:
+# Keycloak issues the tokens, RyzeAuth introspects the scoped API keys,
+# and RyzeHub only accepts requests that RyzeAuth approves.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/RyzeHub.Infrastructure/RyzeAuth/**'
+      - 'src/RyzeHub.Api/Security/**'
+      - 'src/RyzeHub.Contracts/**'
+      - '.github/workflows/ryzeauth-integration.yml'
+  pull_request:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      ryzeauth_ref:
+        description: Git ref of ryzespace/RyzeAuth to test against
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ryzeauth-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  RYZEAUTH_REF: ${{ inputs.ryzeauth_ref || 'main' }}
+
+jobs:
+  contract-parity:
+    name: gRPC contract parity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout RyzeHub
+        uses: actions/checkout@v4
+
+      - name: Checkout RyzeAuth
+        uses: actions/checkout@v4
+        with:
+          repository: ryzespace/RyzeAuth
+          ref: ${{ env.RYZEAUTH_REF }}
+          path: .ryzeauth
+          token: ${{ secrets.RYZEAUTH_REPO_TOKEN || github.token }}
+
+      - name: Compare api_keys.proto message contracts
+        run: |
+          set -euo pipefail
+          ours=src/RyzeHub.Contracts/Protos/api_keys.proto
+          theirs=.ryzeauth/src/RyzeAuth.Contracts/Protos/api_keys.proto
+
+          # Strip comments, blank lines and the GrpcServices-specific option so only
+          # the wire contract (package, service, messages, field numbers) is compared.
+          normalize() {
+            grep -vE '^\s*(//|$)' "$1" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'
+          }
+
+          if diff <(normalize "$ours") <(normalize "$theirs"); then
+            echo "Proto contracts are in sync"
+          else
+            echo "::error::api_keys.proto drifted from ryzespace/RyzeAuth"
+            exit 1
+          fi
+
+  live-ecosystem:
+    name: Live RyzeAuth ecosystem
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout RyzeHub
+        uses: actions/checkout@v4
+
+      - name: Checkout RyzeAuth
+        uses: actions/checkout@v4
+        with:
+          repository: ryzespace/RyzeAuth
+          ref: ${{ env.RYZEAUTH_REF }}
+          path: .ryzeauth
+          token: ${{ secrets.RYZEAUTH_REPO_TOKEN || github.token }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Prepare RyzeAuth secrets
+        working-directory: .ryzeauth
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          sed -i "s|TOKEN_DIGEST_KEY=.*|TOKEN_DIGEST_KEY=$(openssl rand -base64 32)|" .env
+          sed -i "s|KEYCLOAK_EVENT_SIGNING_KEY=.*|KEYCLOAK_EVENT_SIGNING_KEY=$(openssl rand -base64 32)|" .env
+          sed -i 's|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=ci-keycloak-password-please-change|' .env
+          sed -i 's|RYZEAUTH_DB_PASSWORD=.*|RYZEAUTH_DB_PASSWORD=ci-ryzeauth-password-please-change|' .env
+          sed -i 's|KEYCLOAK_ADMIN_PASSWORD=.*|KEYCLOAK_ADMIN_PASSWORD=ci-keycloak-admin-password-please-change|' .env
+          sed -i 's|REDIS_PASSWORD=.*|REDIS_PASSWORD=ci-redis-password-please-change|' .env
+
+      - name: Start RyzeAuth control plane
+        working-directory: .ryzeauth
+        run: docker compose up -d --build
+
+      - name: Wait for Keycloak discovery and RyzeAuth readiness
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8080/realms/ryzespace/.well-known/openid-configuration > /dev/null; then
+              echo "Keycloak OIDC discovery is up"
+              break
+            fi
+            sleep 3
+          done
+
+          curl --fail --silent http://localhost:8080/realms/ryzespace/.well-known/openid-configuration > /dev/null \
+            || { docker compose -f .ryzeauth/docker-compose.yml logs; exit 1; }
+
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8081/health/live > /dev/null; then
+              echo "RyzeAuth API is live"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          docker compose -f .ryzeauth/docker-compose.yml logs
+          exit 1
+
+      - name: Publish RyzeHub API
+        run: dotnet publish src/RyzeHub.Api/RyzeHub.Api.csproj -c Release -o artifacts/api
+
+      - name: Start RyzeHub API against RyzeAuth
+        run: |
+          set -euo pipefail
+          KEY="$(openssl rand -base64 32)"
+
+          # gRPC introspection against RyzeAuth speaks plaintext HTTP/2 in CI.
+          export ASPNETCORE_ENVIRONMENT=Development
+          export ASPNETCORE_URLS=http://+:8082
+          export RyzeAuth__Authority=http://localhost:8080/realms/ryzespace
+          export RyzeAuth__ApiBaseUrl=http://localhost:8081
+          export RyzeAuth__RequireHttpsMetadata=false
+          export RyzeAuth__ApiKeyIntrospectionEnabled=true
+          export RyzeAuth__ForwardAuditEvents=true
+          export Security__EncryptionKey="$KEY"
+          export Security__SigningKey="$KEY"
+          export GRPC_ENABLE_FORK_SUPPORT=1
+          export DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTP2UNENCRYPTEDSUPPORT=1
+
+          nohup dotnet artifacts/api/RyzeHub.Api.dll > /tmp/ryzehub-api.log 2>&1 &
+          echo $! > /tmp/ryzehub-api.pid
+
+          for _ in $(seq 1 40); do
+            if curl --fail --silent http://localhost:8082/health/live > /dev/null; then
+              echo "RyzeHub API is live"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/ryzehub-api.log
+          exit 1
+
+      - name: RyzeHub reports RyzeAuth as reachable
+        run: |
+          set -euo pipefail
+          curl --fail --silent http://localhost:8082/api/pipeline/health | tee health.json
+          jq -e '.auth.jwksReachable == true' health.json
+
+      - name: Unauthenticated requests are rejected
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8082/api/pipeline/run)
+          test "$status" = "401" || { echo "::error::Expected 401, got $status"; exit 1; }
+          echo "Unauthenticated pipeline run correctly rejected"
+
+      - name: Invalid API keys are rejected by RyzeAuth introspection
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -H "X-RyzeHub-Api-Key: rk_definitely_not_a_valid_key" \
+            -X POST http://localhost:8082/api/pipeline/run)
+          test "$status" = "401" || { echo "::error::Expected 401, got $status"; exit 1; }
+          echo "Invalid API key correctly rejected"
+
+      - name: Keycloak issues a token for the RyzeHub service client
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          response=$(curl --silent -X POST \
+            http://localhost:8080/realms/ryzespace/protocol/openid-connect/token \
+            -d grant_type=client_credentials \
+            -d client_id=ryzehub-service \
+            -d client_secret="${{ secrets.RYZEHUB_CLIENT_SECRET || 'dev-ryzehub-service-secret' }}")
+
+          if echo "$response" | jq -e '.access_token' > /dev/null; then
+            echo "Obtained a RyzeHub service token from the ryzespace realm"
+          else
+            echo "::warning::ryzehub-service client is not provisioned in the realm yet: $(echo "$response" | jq -r '.error_description // .error // "unknown"')"
+          fi
+
+      - name: RyzeHub API diagnostics
+        if: always()
+        run: tail -n 200 /tmp/ryzehub-api.log || true
+
+      - name: RyzeAuth compose diagnostics
+        if: always()
+        working-directory: .ryzeauth
+        run: docker compose logs --no-color --tail 200
+
+      - name: Stop RyzeHub API
+        if: always()
+        run: |
+          if [ -f /tmp/ryzehub-api.pid ]; then
+            kill "$(cat /tmp/ryzehub-api.pid)" 2>/dev/null || true
+          fi
+
+      - name: Tear down
+        if: always()
+        working-directory: .ryzeauth
+        run: docker compose down -v
