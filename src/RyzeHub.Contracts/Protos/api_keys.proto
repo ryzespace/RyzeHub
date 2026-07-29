@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// Mirrors ryzespace/RyzeAuth src/RyzeAuth.Contracts/Protos/api_keys.proto.
+// RyzeHub consumes this service as a gRPC client to introspect scoped API keys.
+option csharp_namespace = "RyzeAuth.Contracts.Grpc";
+package ryzeauth.v1;
+
+service ApiKeyIntrospection {
+  rpc Introspect (IntrospectApiKeyRequest) returns (IntrospectApiKeyReply);
+}
+
+message IntrospectApiKeyRequest {
+  string api_key = 1;
+  string required_scope = 2;
+}
+
+message IntrospectApiKeyReply {
+  bool active = 1;
+  string organization_id = 2;
+  repeated string scopes = 3;
+  string key_id = 4;
+  string reason = 5;
+}
