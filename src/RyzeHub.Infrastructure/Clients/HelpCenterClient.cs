@@ -12,15 +12,9 @@ using RyzeHub.Domain.Tickets;
 
 namespace RyzeHub.Infrastructure.Clients;
 
-internal enum CircuitState
-{
-    Closed,
-    Open,
-    HalfOpen
-}
-
 /// <summary>
-/// Writes tickets into the RyzeSpace.HelpCenter API, guarded by a circuit breaker.
+/// Writes tickets into the RyzeSpace.HelpCenter API. Payload shaping lives in
+/// <see cref="TicketPayloadFactory"/> and failure tracking in <see cref="CircuitBreaker"/>.
 /// </summary>
 public sealed class HelpCenterClient : IDestinationTicketClient
 {
@@ -30,122 +24,85 @@ public sealed class HelpCenterClient : IDestinationTicketClient
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<HelpCenterClient> _logger;
-    private readonly DestinationOptions _options;
     private readonly FixedWindowRateLimiter _rateLimiter;
-    private readonly Lock _circuitGate = new();
-
-    private CircuitState _circuitState = CircuitState.Closed;
-    private int _failureCount;
-    private DateTimeOffset? _lastFailure;
+    private readonly CircuitBreaker _circuitBreaker;
 
     public HelpCenterClient(
         HttpClient httpClient,
         ILogger<HelpCenterClient> logger,
         IOptions<DestinationOptions> options)
     {
+        var settings = options.Value;
         _httpClient = httpClient;
         _logger = logger;
-        _options = options.Value;
-        _rateLimiter = new FixedWindowRateLimiter(_options.RateLimit, TimeSpan.FromMinutes(1));
-    }
-
-    private void CheckCircuit()
-    {
-        lock (_circuitGate)
-        {
-            if (_circuitState != CircuitState.Open)
-            {
-                return;
-            }
-
-            var recoveryWindow = TimeSpan.FromSeconds(_options.CircuitBreakerRecoverySeconds);
-            if (_lastFailure is { } lastFailure && DateTimeOffset.UtcNow - lastFailure > recoveryWindow)
-            {
-                _circuitState = CircuitState.HalfOpen;
-                _logger.LogInformation("Circuit breaker HALF-OPEN for helpcenter");
-                return;
-            }
-
-            throw new CircuitBreakerOpenException("helpcenter");
-        }
-    }
-
-    private void RecordSuccess()
-    {
-        lock (_circuitGate)
-        {
-            _failureCount = 0;
-            _circuitState = CircuitState.Closed;
-        }
-    }
-
-    private void RecordFailure()
-    {
-        lock (_circuitGate)
-        {
-            _failureCount++;
-            _lastFailure = DateTimeOffset.UtcNow;
-
-            if (_failureCount >= _options.CircuitBreakerFailureThreshold)
-            {
-                _logger.LogWarning("Circuit breaker OPEN for helpcenter");
-                _circuitState = CircuitState.Open;
-            }
-        }
+        _rateLimiter = new FixedWindowRateLimiter(settings.RateLimit, TimeSpan.FromMinutes(1));
+        _circuitBreaker = new CircuitBreaker(
+            "helpcenter",
+            settings.CircuitBreakerFailureThreshold,
+            TimeSpan.FromSeconds(settings.CircuitBreakerRecoverySeconds),
+            logger);
     }
 
     public async Task<string> CreateTicketAsync(Ticket ticket, CancellationToken cancellationToken)
     {
-        CheckCircuit();
+        _circuitBreaker.EnsureClosed();
         await _rateLimiter.WaitAsync(cancellationToken);
 
-        var payload = BuildTicketPayload(ticket);
         _logger.LogInformation("Creating ticket in helpcenter (source_id={TicketId})", ticket.TicketId);
 
-        HttpResponseMessage response;
-        try
+        using var response = await SendAsync(
+            () => _httpClient.PostAsJsonAsync("tickets", TicketPayloadFactory.Create(ticket), SerializerOptions, cancellationToken),
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
         {
-            response = await _httpClient.PostAsJsonAsync("tickets", payload, SerializerOptions, cancellationToken);
-        }
-        catch (HttpRequestException exception)
-        {
-            RecordFailure();
-            throw new ConnectionFailedException(exception.Message);
-        }
-        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            RecordFailure();
-            throw new PipelineTimeoutException(exception.Message);
+            _circuitBreaker.RecordFailure();
+            throw await TranslateFailureAsync(response, cancellationToken);
         }
 
-        using (response)
+        _circuitBreaker.RecordSuccess();
+
+        var result = await response.Content.ReadFromJsonAsync<JsonNode>(SerializerOptions, cancellationToken);
+        var newId = result?["ticket_id"]?.GetValue<string>() ?? result?["id"]?.GetValue<string>() ?? string.Empty;
+
+        _logger.LogInformation("Created helpcenter ticket {NewId} (from source {TicketId})", newId, ticket.TicketId);
+        return newId;
+    }
+
+    public async Task<BatchTransferResult> BatchCreateTicketsAsync(
+        IReadOnlyList<Ticket> tickets,
+        CancellationToken cancellationToken)
+    {
+        _circuitBreaker.EnsureClosed();
+        await _rateLimiter.WaitAsync(cancellationToken);
+
+        _logger.LogInformation("Batch creating {Count} tickets in helpcenter", tickets.Count);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await SendAsync(
+            () => _httpClient.PostAsJsonAsync("tickets/batch", TicketPayloadFactory.CreateBatch(tickets), SerializerOptions, cancellationToken),
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
         {
-            if (response.IsSuccessStatusCode)
-            {
-                RecordSuccess();
-                var result = await response.Content.ReadFromJsonAsync<JsonNode>(SerializerOptions, cancellationToken);
-                var newId = result?["ticket_id"]?.GetValue<string>() ?? result?["id"]?.GetValue<string>() ?? string.Empty;
-                _logger.LogInformation("Created helpcenter ticket {NewId} (from source {TicketId})", newId, ticket.TicketId);
-                return newId;
-            }
-
-            RecordFailure();
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                var retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds
-                    ?? (double.TryParse(response.Headers.RetryAfter?.ToString(), out var seconds) ? seconds : 60);
-                throw new RateLimitExceededException((long)retryAfter);
-            }
-
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            {
-                throw new AuthenticationFailedException($"HelpCenter rejected credentials: {(int)response.StatusCode}");
-            }
-
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpTransportException($"{(int)response.StatusCode}: {body}");
+            _circuitBreaker.RecordFailure();
+            throw await TranslateFailureAsync(response, cancellationToken);
         }
+
+        _circuitBreaker.RecordSuccess();
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonNode>(SerializerOptions, cancellationToken);
+        stopwatch.Stop();
+
+        var results = ParseBatchResults(payload);
+        var successful = results.Count(item => item.Success);
+
+        return new BatchTransferResult(
+            results,
+            tickets.Count,
+            successful,
+            tickets.Count - successful,
+            (long)stopwatch.Elapsed.TotalMilliseconds);
     }
 
     public async Task<string?> CheckTicketExistsAsync(string sourceTicketId, CancellationToken cancellationToken)
@@ -170,68 +127,9 @@ public sealed class HelpCenterClient : IDestinationTicketClient
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
+            // A failed lookup must not block the run: worst case the ticket is re-sent.
             return null;
         }
-    }
-
-    public async Task<BatchTransferResult> BatchCreateTicketsAsync(
-        IReadOnlyList<Ticket> tickets,
-        CancellationToken cancellationToken)
-    {
-        CheckCircuit();
-        await _rateLimiter.WaitAsync(cancellationToken);
-
-        var stopwatch = Stopwatch.StartNew();
-        var ticketArray = new JsonArray();
-        foreach (var ticket in tickets)
-        {
-            ticketArray.Add(BuildTicketPayload(ticket));
-        }
-
-        var payload = new JsonObject { ["tickets"] = ticketArray };
-
-        _logger.LogInformation("Batch creating {Count} tickets in helpcenter", tickets.Count);
-
-        using var response = await _httpClient.PostAsJsonAsync("tickets/batch", payload, SerializerOptions, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            RecordFailure();
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpTransportException($"{(int)response.StatusCode}: {body}");
-        }
-
-        RecordSuccess();
-        var result = await response.Content.ReadFromJsonAsync<JsonNode>(SerializerOptions, cancellationToken);
-        stopwatch.Stop();
-
-        var results = new List<TransferResult>();
-        if (result?["results"]?.AsArray() is { } rawResults)
-        {
-            foreach (var node in rawResults)
-            {
-                if (node is null)
-                {
-                    continue;
-                }
-
-                results.Add(new TransferResult(
-                    node["ticket_id"]?.GetValue<string>() ?? string.Empty,
-                    node["success"]?.GetValue<bool>() ?? false,
-                    node["helpcenter_ticket_id"]?.GetValue<string>(),
-                    node["error_message"]?.GetValue<string>(),
-                    DateTimeOffset.UtcNow,
-                    node["retry_count"]?.GetValue<int>() ?? 0));
-            }
-        }
-
-        var successful = results.Count(item => item.Success);
-        return new BatchTransferResult(
-            results,
-            tickets.Count,
-            successful,
-            tickets.Count - successful,
-            (long)stopwatch.Elapsed.TotalMilliseconds);
     }
 
     public async Task<(bool Healthy, TimeSpan Latency)> HealthCheckAsync(CancellationToken cancellationToken)
@@ -248,57 +146,87 @@ public sealed class HelpCenterClient : IDestinationTicketClient
 
             if (response.IsSuccessStatusCode)
             {
-                RecordSuccess();
+                _circuitBreaker.RecordSuccess();
                 return (true, stopwatch.Elapsed);
             }
 
-            RecordFailure();
+            _circuitBreaker.RecordFailure();
             return (false, stopwatch.Elapsed);
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
             stopwatch.Stop();
-            RecordFailure();
+            _circuitBreaker.RecordFailure();
             return (false, stopwatch.Elapsed);
         }
     }
 
-    private static JsonObject BuildTicketPayload(Ticket ticket)
+    /// <summary>Runs a request, converting transport faults into pipeline exceptions.</summary>
+    private async Task<HttpResponseMessage> SendAsync(
+        Func<Task<HttpResponseMessage>> send,
+        CancellationToken cancellationToken)
     {
-        var tags = new JsonArray();
-        foreach (var tag in ticket.Tags)
+        try
         {
-            tags.Add(tag);
+            return await send();
+        }
+        catch (HttpRequestException exception)
+        {
+            _circuitBreaker.RecordFailure();
+            throw new ConnectionFailedException(exception.Message);
+        }
+        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            _circuitBreaker.RecordFailure();
+            throw new PipelineTimeoutException(exception.Message);
+        }
+    }
+
+    private static async Task<PipelineException> TranslateFailureAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            var retryAfter = response.Headers.RetryAfter?.Delta?.TotalSeconds
+                ?? (double.TryParse(response.Headers.RetryAfter?.ToString(), out var seconds) ? seconds : 60);
+            return new RateLimitExceededException((long)retryAfter);
         }
 
-        var conversation = new JsonArray();
-        foreach (var message in ticket.Conversation)
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
-            conversation.Add(new JsonObject
+            return new AuthenticationFailedException($"HelpCenter rejected credentials: {(int)response.StatusCode}");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return new HttpTransportException($"{(int)response.StatusCode}: {body}");
+    }
+
+    private static List<TransferResult> ParseBatchResults(JsonNode? payload)
+    {
+        var results = new List<TransferResult>();
+
+        if (payload?["results"]?.AsArray() is not { } rawResults)
+        {
+            return results;
+        }
+
+        foreach (var node in rawResults)
+        {
+            if (node is null)
             {
-                ["sender"] = message.Sender,
-                ["role"] = message.Role.ToWireValue(),
-                ["content"] = message.Content,
-                ["timestamp"] = message.Timestamp.ToString("O"),
-                ["message_id"] = message.MessageId
-            });
+                continue;
+            }
+
+            results.Add(new TransferResult(
+                node["ticket_id"]?.GetValue<string>() ?? string.Empty,
+                node["success"]?.GetValue<bool>() ?? false,
+                node["helpcenter_ticket_id"]?.GetValue<string>(),
+                node["error_message"]?.GetValue<string>(),
+                DateTimeOffset.UtcNow,
+                node["retry_count"]?.GetValue<int>() ?? 0));
         }
 
-        return new JsonObject
-        {
-            ["ticket_id"] = ticket.TicketId,
-            ["ticket_type"] = ticket.TicketType.ToWireValue(),
-            ["description"] = ticket.Description,
-            ["conversation"] = conversation,
-            ["priority"] = ticket.Priority.ToWireValue(),
-            ["category"] = ticket.Category,
-            ["tags"] = tags,
-            ["client_id"] = ticket.ClientId,
-            ["client_name"] = ticket.ClientName,
-            ["organization_id"] = ticket.OrganizationId,
-            ["source"] = "client_dashboard",
-            ["source_ticket_id"] = ticket.TicketId,
-            ["checksum"] = ticket.Checksum
-        };
+        return results;
     }
 }

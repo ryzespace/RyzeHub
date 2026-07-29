@@ -71,6 +71,7 @@ RyzeHub/
 ├── tests/
 │   ├── RyzeHub.UnitTests/
 │   └── RyzeHub.IntegrationTests/   # WebApplicationFactory API tests
+├── scripts/install-workflows.sh    # one-shot workflow installer
 └── docs/
     ├── ARCHITECTURE.md             # layering and responsibility split
     ├── RYZEAUTH-INTEGRATION.md     # control-plane contract and realm setup

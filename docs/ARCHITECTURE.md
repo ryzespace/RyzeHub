@@ -40,6 +40,22 @@ that used to be inlined into the platform.
 `BoundedLog<T>` is the shared primitive behind every rolling history: append-only, size-capped and
 thread-safe, with newest-first reads.
 
+## Diagnostics
+
+Anomaly detection is strategy-based. `AnomalyDetector` owns registration, sampling and alert
+retention; each statistical test is its own `IAnomalyDetectionStrategy`:
+
+| Strategy | Test |
+| --- | --- |
+| `ZScoreStrategy` | Distance from the mean in standard deviations |
+| `IqrStrategy` | Outside Q1/Q3 widened by an IQR multiplier |
+| `MovingAverageStrategy` | Relative deviation from a trailing mean |
+| `ExponentialSmoothingStrategy` | Deviation from a recency-weighted baseline |
+
+Strategies are stateless, so each is tested against a hand-built `TimeSeries` without a detector.
+`ErrorDetectionEngine` keeps only pattern matching and correlation; its signatures live in
+`DefaultErrorPatterns` and its statistical scan in `MetricAnomalyScanner`.
+
 ## Pipeline
 
 `TicketPipeline` orchestrates the run and nothing else. The work it used to do inline now lives in:
@@ -52,6 +68,18 @@ thread-safe, with newest-first reads.
 | `TicketTransformer` | Validation, categorization, prioritization, tagging, filtering |
 
 This means the retry policy can be tested without a hub, and health aggregation without a pipeline.
+
+## Infrastructure clients
+
+`HelpCenterClient` handles requests and responses only. Failure tracking is delegated to
+`CircuitBreaker` (open/half-open/closed transitions) and payload shaping to
+`TicketPayloadFactory`, so the breaker can be tested without HTTP.
+
+`SecureVault` keeps access control and entry bookkeeping; `VaultCipher` owns the AES-GCM envelope
+and `VaultFileStore` the JSON persistence.
+
+`RyzeAuthClient` covers REST introspection, audit forwarding and health probes, while
+`ApiKeyIntrospector` owns the gRPC path plus its digest-keyed positive-result cache.
 
 ## CLI
 

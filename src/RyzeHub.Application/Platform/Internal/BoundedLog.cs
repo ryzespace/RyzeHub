@@ -4,7 +4,7 @@ namespace RyzeHub.Application.Platform.Internal;
 /// Append-only, size-bounded, thread-safe log with newest-first reads.
 /// Shared by every hub store that keeps a rolling history (events, notifications, audit, ...).
 /// </summary>
-internal sealed class BoundedLog<T>(int maxCount = 0)
+public sealed class BoundedLog<T>(int maxCount = 0)
 {
     private readonly List<T> _items = [];
     private readonly Lock _gate = new();
@@ -54,6 +54,14 @@ internal sealed class BoundedLog<T>(int maxCount = 0)
             }
 
             return result;
+        }
+    }
+
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _items.Clear();
         }
     }
 

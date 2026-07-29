@@ -7,19 +7,22 @@ hold the GitHub App `workflows` permission, so it cannot create or update files 
 
 ## Installing them
 
-From a checkout of this branch, with a token that can write workflows:
+From a checkout of this branch, using an account or token that can write workflows:
 
 ```bash
-git checkout arena/019fa9ed-ryzehub
+./scripts/install-workflows.sh --commit
+```
 
+Or manually:
+
+```bash
 cp docs/ci/*.yml .github/workflows/
-
 git add .github/workflows
 git commit -m "ci: install rebuilt workflows"
 git push
 ```
 
-Once installed, this directory can be deleted.
+Once installed, this directory and `scripts/install-workflows.sh` can be deleted.
 
 ## What changed and why
 
